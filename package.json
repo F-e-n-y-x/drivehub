@@ -1,0 +1,22 @@
+{
+  "name": "drivehub",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hosted, Dockerized real-time two-way Google Drive sync with a premium web UI",
+  "license": "MIT",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./packages/*\" dev",
+    "build": "pnpm --filter @drivehub/types build && pnpm --filter @drivehub/web build && pnpm --filter @drivehub/server build",
+    "start": "pnpm --filter @drivehub/server start",
+    "test": "pnpm --filter @drivehub/server test",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

@@ -1,0 +1,28 @@
+services:
+  drivehub:
+    # Use the published image, or build locally with `docker compose build`.
+    image: ghcr.io/f-e-n-y-x/drivehub:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: drivehub
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # --- Required ---
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY}
+      # Public URL the browser uses (must match the Google OAuth redirect host).
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      # --- Optional tuning ---
+      POLL_INTERVAL_MS: ${POLL_INTERVAL_MS:-7000}
+      CONCURRENCY: ${CONCURRENCY:-4}
+      DELETE_PROPAGATION: ${DELETE_PROPAGATION:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      # The local folder you want synced (the "hub").
+      - ./sync-folder:/data/sync
+      # Persistent app data: SQLite DB, encrypted tokens, logs.
+      - ./app-data:/data/app

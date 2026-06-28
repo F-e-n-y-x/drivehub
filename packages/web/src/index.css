@@ -1,0 +1,229 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,450;14..32,500;14..32,600;14..32,700&display=swap");
+@import "tailwindcss";
+
+/* Enable class-based dark mode (Tailwind v4). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   Design tokens — neutral zinc palette + one restrained indigo accent.
+   Values are HSL components so we can compose with opacity.
+--------------------------------------------------------------------------- */
+:root {
+  --background: 0 0% 100%;
+  --foreground: 240 10% 8%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 240 10% 8%;
+
+  --muted: 240 5% 96%;
+  --muted-foreground: 240 4% 46%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 10% 8%;
+
+  --border: 240 6% 90%;
+  --input: 240 6% 90%;
+  --ring: 243 75% 59%;
+
+  --accent: 243 75% 59%; /* indigo #6366f1 */
+  --accent-foreground: 0 0% 100%;
+  --accent-muted: 243 75% 96%;
+
+  --primary: 240 10% 12%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 240 5% 96%;
+  --secondary-foreground: 240 10% 12%;
+
+  /* Status palette */
+  --synced: 152 60% 40%;   /* emerald */
+  --pending: 38 92% 50%;   /* amber */
+  --conflict: 350 78% 56%; /* rose */
+  --danger: 0 72% 51%;     /* red */
+  --paused: 240 4% 60%;    /* zinc */
+
+  --radius: 10px;
+}
+
+.dark {
+  --background: 240 10% 5%;
+  --foreground: 0 0% 96%;
+
+  --card: 240 9% 7%;
+  --card-foreground: 0 0% 96%;
+
+  --muted: 240 5% 13%;
+  --muted-foreground: 240 5% 60%;
+
+  --popover: 240 9% 8%;
+  --popover-foreground: 0 0% 96%;
+
+  --border: 240 5% 16%;
+  --input: 240 5% 18%;
+  --ring: 243 75% 66%;
+
+  --accent: 243 75% 66%;
+  --accent-foreground: 240 10% 6%;
+  --accent-muted: 243 40% 18%;
+
+  --primary: 0 0% 96%;
+  --primary-foreground: 240 10% 6%;
+
+  --secondary: 240 5% 14%;
+  --secondary-foreground: 0 0% 96%;
+
+  --synced: 152 55% 48%;
+  --pending: 38 92% 56%;
+  --conflict: 350 80% 64%;
+  --danger: 0 72% 60%;
+  --paused: 240 4% 50%;
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-accent-muted: hsl(var(--accent-muted));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-synced: hsl(var(--synced));
+  --color-pending: hsl(var(--pending));
+  --color-conflict: hsl(var(--conflict));
+  --color-danger: hsl(var(--danger));
+  --color-paused: hsl(var(--paused));
+
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: var(--font-sans);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Tabular numbers for stats / metrics. */
+  .tabular-nums {
+    font-feature-settings: "tnum" 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    background-color: hsl(var(--accent) / 0.22);
+  }
+
+  /* Refined scrollbars */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.28);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.45);
+  }
+}
+
+/* Quiet pulse used by the live indicator. */
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+}
+.animate-live-pulse {
+  animation: live-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Minimal Radix open/close animation utilities (avoids extra dependency). */
+@keyframes dh-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes dh-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes dh-zoom-in {
+  from {
+    transform: translate(-50%, -50%) scale(0.96);
+    opacity: 0;
+  }
+}
+@keyframes dh-zoom-out {
+  to {
+    transform: translate(-50%, -50%) scale(0.96);
+    opacity: 0;
+  }
+}
+
+[data-state="open"][data-dh-overlay] {
+  animation: dh-fade-in 150ms ease;
+}
+[data-state="closed"][data-dh-overlay] {
+  animation: dh-fade-out 150ms ease;
+}
+[data-state="open"][data-dh-content] {
+  animation: dh-zoom-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-state="closed"][data-dh-content] {
+  animation: dh-zoom-out 140ms ease;
+}
+
+@keyframes dh-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}

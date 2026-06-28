@@ -1,0 +1,6 @@
+# Normalize line endings — keep shell scripts and Docker files LF on all OSes.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary

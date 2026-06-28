@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          body: |
+            ## DriveHub ${{ github.ref_name }}
+
+            Container image:
+            ```
+            docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ```
+
+            See the [README](https://github.com/${{ github.repository }}#quick-start)
+            for setup, and [SETUP.md](https://github.com/${{ github.repository }}/blob/main/SETUP.md)
+            for the Google OAuth walkthrough.
+
+            ---
+            _Release notes below are generated from merged changes._

@@ -1,0 +1,16 @@
+node_modules
+**/node_modules
+**/dist
+.git
+.github
+app-data
+sync-folder
+*.sqlite
+*.log
+coverage
+playwright-report
+test-results
+docs
+.env
+.env.*
+!.env.example
