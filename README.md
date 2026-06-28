@@ -6,6 +6,7 @@
 
 [![CI](https://github.com/F-e-n-y-x/drivehub/actions/workflows/ci.yml/badge.svg)](https://github.com/F-e-n-y-x/drivehub/actions/workflows/ci.yml)
 [![Publish image](https://github.com/F-e-n-y-x/drivehub/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/F-e-n-y-x/drivehub/actions/workflows/docker-publish.yml)
+[![GHCR image](https://img.shields.io/badge/ghcr.io-drivehub-2496ED?logo=docker&logoColor=white)](https://github.com/F-e-n-y-x/drivehub/pkgs/container/drivehub)
 [![License: MIT](https://img.shields.io/badge/License-MIT-informational.svg)](LICENSE)
 
 </div>
@@ -66,16 +67,41 @@ simply resumes from current state.
 > Prerequisites: Docker + a Google Cloud OAuth client. The OAuth client takes
 > ~5 minutes to set up — follow **[SETUP.md](SETUP.md)**.
 
+The pre-built image is published to the GitHub Container Registry:
+
+**📦 [`ghcr.io/f-e-n-y-x/drivehub`](https://github.com/F-e-n-y-x/drivehub/pkgs/container/drivehub)** &nbsp;·&nbsp; tags: `latest`, `v0.1.0` &nbsp;·&nbsp; platforms: `linux/amd64`, `linux/arm64`
+
+```bash
+docker pull ghcr.io/f-e-n-y-x/drivehub:latest
+```
+
+### Option A — Docker Compose (recommended)
+
 ```bash
 git clone https://github.com/F-e-n-y-x/drivehub.git
 cd drivehub
 cp .env.example .env
 # Edit .env: paste your GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET,
 # and set TOKEN_ENCRYPTION_KEY  (openssl rand -base64 32)
-docker compose up -d
+docker compose up -d        # pulls ghcr.io/f-e-n-y-x/drivehub:latest
 ```
 
-Open <http://localhost:8080>, click **Connect Google Account**, and pick the
+### Option B — `docker run` (just the image, no clone)
+
+```bash
+docker run -d --name drivehub \
+  -p 8080:8080 \
+  -e GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com" \
+  -e GOOGLE_CLIENT_SECRET="your-client-secret" \
+  -e TOKEN_ENCRYPTION_KEY="$(openssl rand -base64 32)" \
+  -e PUBLIC_URL="http://localhost:8080" \
+  -v "$PWD/sync-folder:/data/sync" \
+  -v "$PWD/app-data:/data/app" \
+  --restart unless-stopped \
+  ghcr.io/f-e-n-y-x/drivehub:latest
+```
+
+Then open <http://localhost:8080>, click **Connect Google Account**, and pick the
 folder mapping. Drop a file into `./sync-folder` and watch it sync.
 
 ## Configuration
