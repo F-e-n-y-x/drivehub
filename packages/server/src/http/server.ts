@@ -1,5 +1,5 @@
-import { existsSync } from "node:fs";
-import { readdir } from "node:fs/promises";
+import { createReadStream, existsSync } from "node:fs";
+import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import cookie from "@fastify/cookie";
@@ -337,13 +337,63 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     }
   });
 
-  // ----- local filesystem browser (for the Local remote folder picker) ---
+  // ----- local filesystem browser (container FS: /, /app, /data/sync …) -----
   app.get("/api/fs", async (req, reply) => {
     const q = req.query as { path?: string };
     try {
       return await browseLocalFs(q.path);
     } catch (e) {
       return reply.code(400).send({ error: "fs_browse_failed", message: String((e as Error).message ?? e) });
+    }
+  });
+
+  // Stream a local file (preview/download) with Range support, read straight
+  // from disk — used by the built-in "Local files" browser source.
+  app.get("/api/fs/file", async (req, reply) => {
+    const q = req.query as { path?: string; download?: string };
+    if (!q.path) return reply.code(400).send({ error: "bad_request", message: "path required" });
+    const abs = path.resolve(q.path);
+    let size: number;
+    try {
+      const st = await stat(abs);
+      if (!st.isFile()) return reply.code(400).send({ error: "not_a_file", message: abs });
+      size = st.size;
+    } catch {
+      return reply.code(404).send({ error: "not_found", message: abs });
+    }
+    const filename = path.basename(abs);
+    reply.hijack();
+    const headers: Record<string, string> = {
+      "Content-Type": mimeFromName(filename),
+      "Accept-Ranges": "bytes",
+    };
+    if (q.download != null) headers["Content-Disposition"] = `attachment; filename="${filename.replace(/"/g, "")}"`;
+    const m = req.headers.range ? /bytes=(\d*)-(\d*)/.exec(req.headers.range) : null;
+    if (m) {
+      let start = m[1] ? parseInt(m[1], 10) : 0;
+      let end = m[2] ? parseInt(m[2], 10) : size - 1;
+      if (Number.isNaN(start) || start < 0) start = 0;
+      if (Number.isNaN(end) || end >= size) end = size - 1;
+      if (start > end) {
+        reply.raw.writeHead(416, { "Content-Range": `bytes */${size}` });
+        reply.raw.end();
+        return;
+      }
+      reply.raw.writeHead(206, {
+        ...headers,
+        "Content-Range": `bytes ${start}-${end}/${size}`,
+        "Content-Length": String(end - start + 1),
+      });
+      const s = createReadStream(abs, { start, end });
+      s.pipe(reply.raw);
+      s.on("error", () => reply.raw.destroy());
+      req.raw.on("close", () => s.destroy());
+    } else {
+      reply.raw.writeHead(200, { ...headers, "Content-Length": String(size) });
+      const s = createReadStream(abs);
+      s.pipe(reply.raw);
+      s.on("error", () => reply.raw.destroy());
+      req.raw.on("close", () => s.destroy());
     }
   });
 

@@ -438,6 +438,10 @@ export class RemoteService {
   async about(remoteId: string): Promise<{ total: number | null; used: number | null; free: number | null }> {
     const row = this.repo.getRemote(remoteId);
     if (!row) throw new Error("Unknown remote");
+    // Works for both clouds ("name:") and local (a filesystem path).
+    const a = await this.rclone.aboutTarget(this.target(remoteId, ""));
+    if (a.total != null) return { total: a.total, used: a.used, free: a.free };
+    // Fallback for local disks where rclone About may not report.
     if (row.type === "local") {
       try {
         const s = await statfs(this.localPath(row.configEnc));
@@ -445,10 +449,9 @@ export class RemoteService {
         const free = Number(s.bavail) * s.bsize;
         return { total, free, used: total - free };
       } catch {
-        return { total: null, used: null, free: null };
+        /* fall through */
       }
     }
-    const a = await this.rclone.about(row.name);
     return { total: a.total, used: a.used, free: a.free };
   }
 

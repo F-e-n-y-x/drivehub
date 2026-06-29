@@ -116,6 +116,7 @@ export function FilePreviewDialog({
   siblings,
   index,
   onNavigate,
+  urlFor,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -127,7 +128,15 @@ export function FilePreviewDialog({
   index?: number;
   /** Called to switch to another sibling by index. */
   onNavigate?: (nextIndex: number) => void;
+  /**
+   * Overrides how a streaming/download URL is built for an entry. Defaults to
+   * the per-remote `fileUrl`; the synthetic "Local files" source passes
+   * `fsFileUrl` so it streams from `/api/fs/file` instead.
+   */
+  urlFor?: (entry: RemoteEntry, download?: boolean) => string;
 }) {
+  const buildUrl = urlFor ?? ((e: RemoteEntry, download?: boolean) =>
+    fileUrl(remoteId, e.path, download));
   const list = siblings ?? (entry ? [entry] : []);
   const current =
     typeof index === "number" && index >= 0 && index < list.length
@@ -206,7 +215,7 @@ export function FilePreviewDialog({
                 <div className="flex shrink-0 items-center gap-1.5">
                   <SimpleTooltip label="Open raw in new tab">
                     <a
-                      href={fileUrl(remoteId, entry.path)}
+                      href={buildUrl(entry)}
                       target="_blank"
                       rel="noreferrer noopener"
                       className={buttonVariants({
@@ -219,7 +228,7 @@ export function FilePreviewDialog({
                     </a>
                   </SimpleTooltip>
                   <a
-                    href={fileUrl(remoteId, entry.path, true)}
+                    href={buildUrl(entry, true)}
                     download={entry.name}
                     className={buttonVariants({
                       variant: "outline",
@@ -245,7 +254,7 @@ export function FilePreviewDialog({
               <div className="relative min-h-0 flex-1 overflow-hidden bg-muted/30">
                 {/* `key` forces a clean remount per entry so each preview gets
                     fresh zoom/scroll/error state. */}
-                <PreviewStage key={entry.path} remoteId={remoteId} entry={entry} />
+                <PreviewStage key={entry.path} entry={entry} buildUrl={buildUrl} />
 
                 {hasNav && (
                   <>
@@ -295,14 +304,14 @@ function NavButton({
 }
 
 function PreviewStage({
-  remoteId,
   entry,
+  buildUrl,
 }: {
-  remoteId: string;
   entry: RemoteEntry;
+  buildUrl: (entry: RemoteEntry, download?: boolean) => string;
 }) {
   const kind = previewKind(entry);
-  const src = fileUrl(remoteId, entry.path);
+  const src = buildUrl(entry);
   const [errored, setErrored] = useState(false);
 
   if (errored)
@@ -363,7 +372,7 @@ function PreviewStage({
       <TextStage
         entry={entry}
         src={src}
-        downloadHref={fileUrl(remoteId, entry.path, true)}
+        downloadHref={buildUrl(entry, true)}
       />
     );
 
@@ -371,7 +380,7 @@ function PreviewStage({
     <StageMessage
       icon={FileQuestion}
       text="No preview available for this file type."
-      downloadHref={fileUrl(remoteId, entry.path, true)}
+      downloadHref={buildUrl(entry, true)}
       downloadName={entry.name}
     />
   );

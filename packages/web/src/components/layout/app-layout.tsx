@@ -31,7 +31,7 @@ export function AppLayout() {
               "w-full py-8",
               fullWidth
                 ? "px-5 sm:px-6"
-                : "mx-auto max-w-6xl px-5 sm:px-8",
+                : "mx-auto max-w-[88rem] px-5 sm:px-8",
             )}
           >
             <Outlet />

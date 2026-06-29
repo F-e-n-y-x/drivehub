@@ -23,8 +23,13 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import type { RemoteEntry, RemotePublic } from "@drivehub/types";
-import { useBrowse, useBrowseMutations, useRemotes } from "@/hooks/queries";
+import type { FsListing, RemoteEntry, RemotePublic } from "@drivehub/types";
+import {
+  useBrowse,
+  useBrowseMutations,
+  useFsBrowse,
+  useRemotes,
+} from "@/hooks/queries";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,13 +64,58 @@ import { FilePreviewDialog } from "@/components/file-preview-dialog";
 import { entryIcon } from "@/lib/file-icons";
 import { remoteTypeLabel } from "@/lib/remotes";
 import { cn, formatBytes, formatRelativeTime } from "@/lib/utils";
-import { fileUrl, type ApiError, type TransferOpInput } from "@/lib/api";
+import {
+  fileUrl,
+  fsFileUrl,
+  type ApiError,
+  type TransferOpInput,
+} from "@/lib/api";
 import { useClipboardStore } from "@/store/clipboard";
 import { useBrowserTabsStore, type BrowserTab } from "@/store/browser-tabs";
 
 type SortKey = "name" | "size" | "modified";
 type SortDir = "asc" | "desc";
 type ViewMode = "list" | "grid";
+
+/**
+ * Sentinel `remoteId` for the synthetic "Local files" source — the container's
+ * own filesystem, browsed read-only via `/api/fs` instead of a real remote.
+ */
+export const LOCAL_FS_ID = "__localfs";
+
+/** Quick-jump roots offered for the Local files source. */
+const FS_QUICK_PATHS = ["/", "/app", "/data/sync", "/data/app"];
+
+/** Normalize a single `FsEntry` into the `RemoteEntry` shape the views expect. */
+function fsEntryToRemoteEntry(e: FsListing["entries"][number]): RemoteEntry {
+  return {
+    name: e.name,
+    path: e.path,
+    isDir: e.isDir,
+    sizeBytes: e.sizeBytes ?? 0,
+    modTime: null,
+    mimeType: null,
+  };
+}
+
+/**
+ * Turn an `/api/fs` listing into the same `{ breadcrumbs, entries }` shape a
+ * real remote returns, so the existing FileManager views work unchanged.
+ * Breadcrumbs are derived from the absolute path; the leading "Root" button
+ * (rendered by FileManager) covers `/`, so we only list the segments.
+ */
+function fsListingToRemoteListing(listing: FsListing): {
+  breadcrumbs: Array<{ name: string; path: string }>;
+  entries: RemoteEntry[];
+} {
+  const segments = listing.path.split("/").filter(Boolean);
+  let acc = "";
+  const breadcrumbs = segments.map((seg) => {
+    acc += `/${seg}`;
+    return { name: seg, path: acc };
+  });
+  return { breadcrumbs, entries: listing.entries.map(fsEntryToRemoteEntry) };
+}
 
 /**
  * INTERACTION MODEL (select vs open)
@@ -115,12 +165,17 @@ export function BrowserPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remotes]);
 
-  // Seed the active tab with the first remote once remotes load (only if it has
-  // none yet — never clobber a tab the user has already pointed somewhere).
+  // Seed the active tab once remotes load (only if it has none yet — never
+  // clobber a tab the user has already pointed somewhere). Prefer the first
+  // real remote; if there are none, fall back to the always-available "Local
+  // files" source so the browser is never empty.
   useEffect(() => {
     if (searchParams.get("remote")) return; // let the deep-link effect win
-    if (!activeTab.remoteId && remotes && remotes.length > 0) {
+    if (activeTab.remoteId || !remotes) return;
+    if (remotes.length > 0) {
       updateActiveTab({ remoteId: remotes[0]!.id });
+    } else {
+      updateActiveTab({ remoteId: LOCAL_FS_ID, path: "/" });
     }
   }, [remotes, activeTab.remoteId, updateActiveTab, searchParams]);
 
@@ -139,13 +194,9 @@ export function BrowserPage() {
 
       {remotesLoading ? (
         <Skeleton className="h-80 w-full rounded-xl" />
-      ) : !remotes || remotes.length === 0 ? (
-        <EmptyState
-          icon={HardDrive}
-          title="No remotes to browse"
-          description="Connect a storage remote to browse its files here."
-        />
       ) : (
+        // The "Local files" source is always available (no remote required), so
+        // the browser is shown even when no remotes are connected.
         <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card">
           <TabStrip
             tabs={tabs}
@@ -153,7 +204,12 @@ export function BrowserPage() {
             remoteById={remoteById}
             onSelect={setActive}
             onClose={closeTab}
-            onAdd={() => addTab({ remoteId: activeTab.remoteId })}
+            onAdd={() =>
+              addTab({
+                remoteId: activeTab.remoteId,
+                path: activeTab.remoteId === LOCAL_FS_ID ? "/" : "",
+              })
+            }
           />
           <FileManager
             key={activeTab.id}
@@ -162,11 +218,15 @@ export function BrowserPage() {
             onPathChange={(path) => updateActiveTab({ path })}
             remoteSelector={
               <RemoteSelector
-                remotes={remotes}
+                remotes={remotes ?? []}
                 value={activeTab.remoteId ?? ""}
                 onChange={(remoteId) =>
-                  // Switching remote resets to that remote's root.
-                  updateActiveTab({ remoteId, path: "" })
+                  // Switching source resets to its root. Local files roots at
+                  // "/"; real remotes root at "".
+                  updateActiveTab({
+                    remoteId,
+                    path: remoteId === LOCAL_FS_ID ? "/" : "",
+                  })
                 }
               />
             }
@@ -184,10 +244,11 @@ function basename(path: string): string {
   return parts[parts.length - 1] ?? "";
 }
 
-/** The short title shown on a tab: folder name, else remote label, else hint. */
+/** The short title shown on a tab: folder name, else source label, else hint. */
 function tabTitle(tab: BrowserTab, remote: RemotePublic | undefined): string {
   const base = basename(tab.path);
   if (base) return base;
+  if (tab.remoteId === LOCAL_FS_ID) return "Local files";
   if (remote) return remote.label;
   return "New tab";
 }
@@ -284,21 +345,28 @@ function RemoteSelector({
   value: string;
   onChange: (id: string) => void;
 }) {
+  const isLocalFs = value === LOCAL_FS_ID;
   const selected = remotes.find((r) => r.id === value);
   return (
     <div className="w-full sm:w-72">
       <SelectRoot value={value} onValueChange={onChange}>
         <SelectTrigger
-          aria-label="Select remote"
+          aria-label="Select source"
           className="h-auto min-h-[3.25rem] min-w-[14rem] py-1.5"
         >
-          {selected ? (
+          {isLocalFs ? (
+            <LocalFsLines />
+          ) : selected ? (
             <RemoteLines remote={selected} />
           ) : (
-            <span className="text-muted-foreground/70">Select a remote…</span>
+            <span className="text-muted-foreground/70">Select a source…</span>
           )}
         </SelectTrigger>
         <SelectContent>
+          {/* Built-in source: the container's own filesystem (read-only). */}
+          <SelectItem value={LOCAL_FS_ID} className="py-1.5">
+            <LocalFsLines />
+          </SelectItem>
           {remotes.map((r) => (
             <SelectItem key={r.id} value={r.id} className="py-1.5">
               <RemoteLines remote={r} />
@@ -307,6 +375,21 @@ function RemoteSelector({
         </SelectContent>
       </SelectRoot>
     </div>
+  );
+}
+
+/** Two-line presentation for the synthetic "Local files" source. */
+function LocalFsLines() {
+  return (
+    <span className="flex min-w-0 items-center gap-2 text-left">
+      <HardDrive className="size-5 shrink-0 text-muted-foreground" />
+      <span className="flex min-w-0 flex-1 flex-col leading-tight">
+        <span className="truncate text-sm font-medium text-foreground">
+          Local files
+        </span>
+        <span className="truncate text-xs text-muted-foreground">container</span>
+      </span>
+    </span>
   );
 }
 
@@ -355,15 +438,37 @@ function FileManager({
   const [deleteTargets, setDeleteTargets] = useState<RemoteEntry[] | null>(null);
   const [previewEntry, setPreviewEntry] = useState<RemoteEntry | null>(null);
 
-  const { data, isLoading, isError, error, refetch, isFetching } = useBrowse(
-    remoteId,
-    path,
-  );
+  // Branch the data layer by source. The synthetic "Local files" source is a
+  // read-only inspector driven by `/api/fs`; everything else is a real remote
+  // via `/api/remotes/:id/browse`. Both hooks are called unconditionally (rules
+  // of hooks) but each is gated so only the active one fetches.
+  const isLocalFs = remoteId === LOCAL_FS_ID;
+  // FS paths are absolute; default to "/" if a tab somehow has an empty path.
+  const fsPath = path || "/";
+
+  const remoteQuery = useBrowse(isLocalFs ? null : remoteId, path);
+  const fsQuery = useFsBrowse(isLocalFs ? fsPath : "");
+
+  const active = isLocalFs ? fsQuery : remoteQuery;
+  const { isLoading, isError, error, refetch, isFetching } = active;
+
   const ops = useBrowseMutations(remoteId, path);
   const clipboard = useClipboardStore();
 
-  const breadcrumbs = data?.breadcrumbs ?? [];
-  const entries = data?.entries ?? [];
+  const normalized = useMemo(() => {
+    if (isLocalFs) {
+      return fsQuery.data
+        ? fsListingToRemoteListing(fsQuery.data)
+        : { breadcrumbs: [], entries: [] as RemoteEntry[] };
+    }
+    return {
+      breadcrumbs: remoteQuery.data?.breadcrumbs ?? [],
+      entries: remoteQuery.data?.entries ?? [],
+    };
+  }, [isLocalFs, fsQuery.data, remoteQuery.data]);
+
+  const breadcrumbs = normalized.breadcrumbs;
+  const entries = normalized.entries;
 
   const go = (next: string) => {
     onPathChange(next);
@@ -497,11 +602,21 @@ function FileManager({
     });
   };
 
+  // URL builder for a file's bytes — branches to `/api/fs/file` for the local
+  // source and `/api/remotes/:id/file` for real remotes.
+  const urlFor = useCallback(
+    (entry: RemoteEntry, download?: boolean) =>
+      isLocalFs
+        ? fsFileUrl(entry.path, download)
+        : fileUrl(remoteId, entry.path, download),
+    [isLocalFs, remoteId],
+  );
+
   const downloadEntries = (entries: RemoteEntry[]) => {
     for (const e of entries) {
       if (e.isDir) continue;
       const a = document.createElement("a");
-      a.href = fileUrl(remoteId, e.path, true);
+      a.href = urlFor(e, true);
       a.download = e.name;
       document.body.appendChild(a);
       a.click();
@@ -591,63 +706,72 @@ function FileManager({
           </div>
         </div>
 
-        {/* Action bar */}
+        {/* Action bar — write actions are hidden for the read-only Local files
+            source; only download/preview remain. */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setNewFolderOpen(true)}
-          >
-            <FolderPlus className="size-4" />
-            New folder
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setNewFileOpen(true)}>
-            <FilePlus className="size-4" />
-            New file
-          </Button>
+          {!isLocalFs && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setNewFolderOpen(true)}
+              >
+                <FolderPlus className="size-4" />
+                New folder
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setNewFileOpen(true)}
+              >
+                <FilePlus className="size-4" />
+                New file
+              </Button>
 
-          <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
+              <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
 
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={!single}
-            onClick={() => single && setRenameTarget(single)}
-          >
-            <Pencil className="size-4" />
-            Rename
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={selectedEntries.length === 0}
-            onClick={() => copyToClipboard(selectedEntries, "copy")}
-          >
-            <Copy className="size-4" />
-            Copy
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={selectedEntries.length === 0}
-            onClick={() => copyToClipboard(selectedEntries, "cut")}
-          >
-            <Scissors className="size-4" />
-            Cut
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={clipboardCount === 0 || ops.paste.isPending}
-            onClick={paste}
-          >
-            {ops.paste.isPending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Clipboard className="size-4" />
-            )}
-            Paste
-          </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!single}
+                onClick={() => single && setRenameTarget(single)}
+              >
+                <Pencil className="size-4" />
+                Rename
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={selectedEntries.length === 0}
+                onClick={() => copyToClipboard(selectedEntries, "copy")}
+              >
+                <Copy className="size-4" />
+                Copy
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={selectedEntries.length === 0}
+                onClick={() => copyToClipboard(selectedEntries, "cut")}
+              >
+                <Scissors className="size-4" />
+                Cut
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={clipboardCount === 0 || ops.paste.isPending}
+                onClick={paste}
+              >
+                {ops.paste.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Clipboard className="size-4" />
+                )}
+                Paste
+              </Button>
+            </>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -657,16 +781,18 @@ function FileManager({
             <Download className="size-4" />
             Download
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-danger hover:bg-danger/10 hover:text-danger"
-            disabled={selectedEntries.length === 0}
-            onClick={() => setDeleteTargets(selectedEntries)}
-          >
-            <Trash2 className="size-4" />
-            Delete
-          </Button>
+          {!isLocalFs && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-danger hover:bg-danger/10 hover:text-danger"
+              disabled={selectedEntries.length === 0}
+              onClick={() => setDeleteTargets(selectedEntries)}
+            >
+              <Trash2 className="size-4" />
+              Delete
+            </Button>
+          )}
 
           <div className="ml-auto flex items-center gap-2">
             {clipboardCount > 0 && (
@@ -699,14 +825,39 @@ function FileManager({
           </div>
         </div>
 
+        {/* Quick-jump chips for the Local files source. */}
+        {isLocalFs && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Jump to</span>
+            {FS_QUICK_PATHS.map((p) => {
+              const active = fsPath === p;
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => go(p)}
+                  className={cn(
+                    "rounded-md border px-2 py-0.5 font-mono text-xs transition-colors",
+                    active
+                      ? "border-accent/40 bg-accent-muted text-accent"
+                      : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  {p}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Breadcrumbs */}
         <div className="flex items-center gap-0.5 overflow-x-auto text-[13px]">
           <button
-            onClick={() => go("")}
+            onClick={() => go(isLocalFs ? "/" : "")}
             className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <Home className="size-3.5" />
-            Root
+            {isLocalFs ? "/" : "Root"}
           </button>
           {breadcrumbs.map((b) => (
             <span key={b.path} className="flex shrink-0 items-center gap-0.5">
@@ -740,7 +891,11 @@ function FileManager({
           <EmptyState
             icon={entryIcon("", true)}
             title="This folder is empty"
-            description="Use New folder or New file to add something here."
+            description={
+              isLocalFs
+                ? "There's nothing in this directory."
+                : "Use New folder or New file to add something here."
+            }
             className="m-6 border-0 bg-transparent"
           />
         ) : visible.length === 0 ? (
@@ -762,6 +917,7 @@ function FileManager({
             actions={(entry) => (
               <RowMenu
                 entry={entry}
+                readOnly={isLocalFs}
                 selectedEntries={selectedEntries}
                 clipboardCount={clipboardCount}
                 pastePending={ops.paste.isPending}
@@ -790,6 +946,7 @@ function FileManager({
             actions={(entry) => (
               <RowMenu
                 entry={entry}
+                readOnly={isLocalFs}
                 selectedEntries={selectedEntries}
                 clipboardCount={clipboardCount}
                 pastePending={ops.paste.isPending}
@@ -888,6 +1045,7 @@ function FileManager({
         entry={previewEntry}
         siblings={previewSiblings}
         index={previewIndex}
+        urlFor={urlFor}
         onNavigate={(i) => {
           const next = previewSiblings[i];
           if (next) setPreviewEntry(next);
@@ -999,6 +1157,7 @@ function ViewToggle({
 
 function RowMenu({
   entry,
+  readOnly,
   selectedEntries,
   clipboardCount,
   pastePending,
@@ -1011,6 +1170,8 @@ function RowMenu({
   onDownload,
 }: {
   entry: RemoteEntry;
+  /** Local files source: only open/preview + download; no mutations. */
+  readOnly?: boolean;
   selectedEntries: RemoteEntry[];
   clipboardCount: number;
   pastePending: boolean;
@@ -1028,6 +1189,26 @@ function RowMenu({
   const targets = inSelection && selectedEntries.length > 0 ? selectedEntries : [entry];
   const multi = targets.length > 1;
   const files = targets.filter((t) => !t.isDir);
+
+  // Read-only inspector (Local files): just open/preview and download.
+  if (readOnly) {
+    return (
+      <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
+        {!multi && (
+          <ContextMenuItem onSelect={() => onOpen(entry)}>
+            {entry.isDir ? <Search /> : <Eye />}
+            {entry.isDir ? "Open" : "Preview"}
+          </ContextMenuItem>
+        )}
+        {files.length > 0 && (
+          <ContextMenuItem onSelect={() => onDownload(files)}>
+            <Download />
+            Download{files.length > 1 ? ` (${files.length})` : ""}
+          </ContextMenuItem>
+        )}
+      </ContextMenuContent>
+    );
+  }
 
   return (
     <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>

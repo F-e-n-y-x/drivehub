@@ -109,6 +109,17 @@ export function fileUrl(id: string, path: string, download?: boolean): string {
   return `/api/remotes/${encodeURIComponent(id)}/file?${params.toString()}`;
 }
 
+/**
+ * Builds the URL that streams a *local container* file's bytes (the synthetic
+ * "Local files" browser source). Range-supported, so usable directly as a
+ * media/`<iframe>` src; `download` sets Content-Disposition: attachment.
+ */
+export function fsFileUrl(path: string, download?: boolean): string {
+  const params = new URLSearchParams({ path });
+  if (download) params.set("download", "1");
+  return `/api/fs/file?${params.toString()}`;
+}
+
 export const api = {
   health: () => request<OkResponse>("/api/health"),
   status: () => request<EngineStatus>("/api/status"),

@@ -76,14 +76,14 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
   const runSpeedTest = () => speedTest.mutate(remote.id);
 
   return (
-    <Card className="flex flex-col gap-4 p-5">
+    <Card className="flex h-full flex-col gap-4 p-5">
       {/* Header */}
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-3">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-muted/40">
           <RemoteIcon type={remote.type} className="size-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-semibold text-foreground">
+          <h3 className="truncate text-sm font-semibold leading-tight text-foreground">
             {remote.label}
           </h3>
           {email ? (
@@ -97,7 +97,7 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
             </p>
           )}
         </div>
-        <Badge variant={status.badgeVariant}>
+        <Badge variant={status.badgeVariant} className="shrink-0 self-start">
           <StatusDot className={status.dotClass} />
           {status.label}
         </Badge>

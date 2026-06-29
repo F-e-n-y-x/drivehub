@@ -212,7 +212,12 @@ export class RcloneService {
   }
 
   async about(remoteName: string): Promise<AboutResult> {
-    const { code, stdout } = await this.run(["about", `${remoteName}:`, "--json"]);
+    return this.aboutTarget(`${remoteName}:`);
+  }
+
+  /** About on an explicit target ("name:" for remotes, or a local path). */
+  async aboutTarget(target: string): Promise<AboutResult> {
+    const { code, stdout } = await this.run(["about", target, "--json"]);
     if (code !== 0) return { total: null, used: null, free: null, trashed: null };
     try {
       const j = JSON.parse(stdout) as Record<string, number>;
