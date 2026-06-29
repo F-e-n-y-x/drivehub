@@ -1,6 +1,7 @@
 import { Outlet, useLocation } from "react-router-dom";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./topbar";
+import { TransfersPanel } from "@/components/transfers-panel";
 import { useServerEvents } from "@/hooks/use-server-events";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +39,8 @@ export function AppLayout() {
           </div>
         </main>
       </div>
+      {/* Global bottom-right transfers/progress popup. */}
+      <TransfersPanel />
     </div>
   );
 }

@@ -288,6 +288,15 @@ export class RcloneService {
   }
 
   /**
+   * Stream bytes from stdin into a remote file (`rclone rcat`). The caller pipes
+   * an upload's request body into the returned child's stdin — used for "upload
+   * from this computer" so the file streams straight to the backend.
+   */
+  rcatProcess(target: string) {
+    return spawn(this.bin, [...this.baseArgs(), "rcat", target], { windowsHide: true });
+  }
+
+  /**
    * Run a transfer operation (sync/copy/bisync), streaming rclone's JSON stats
    * via onStats. Resolves with the final result when the process exits.
    */

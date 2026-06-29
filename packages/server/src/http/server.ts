@@ -72,6 +72,9 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
   const app = Fastify({ loggerInstance: logger, disableRequestLogging: true });
   const repo = orch.repo;
   void app.register(cookie);
+  // Raw binary uploads ("upload from this computer") stream straight through to
+  // rclone rcat — don't buffer the body, hand the route the raw stream.
+  app.addContentTypeParser("application/octet-stream", (_req, payload, done) => done(null, payload));
 
   // ----- health / status -------------------------------------------------
   app.get("/api/health", async () => ({ ok: true }));
@@ -253,9 +256,25 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
   const badTarget = (reply: import("fastify").FastifyReply, e: unknown) =>
     reply.code(400).send({ error: "bad_target", message: String((e as Error).message ?? e) });
 
+  // rclone can't manage TeraBox files (move/copy/rename/delete/mkdir all fail on
+  // the unofficial backend), so for TeraBox remotes we drive its web filemanager
+  // API directly. Returns the cookie for a terabox remote, else null.
+  const teraboxCookie = (id: string): string | null => {
+    const row = repo.getRemote(id);
+    return row?.type === "terabox" ? orch.remotes.getParam(id, "cookie") : null;
+  };
+  const absPath = (p: string | undefined) => `/${(p ?? "").replace(/^\/+/, "")}`;
+  const opError = (reply: import("fastify").FastifyReply, code: string, e: unknown) =>
+    reply.code(400).send({ error: code, message: String((e as Error).message ?? e) });
+
   app.post("/api/remotes/:id/ops/mkdir", async (req, reply) => {
     const { id } = req.params as { id: string };
     const { path: p } = (req.body ?? {}) as { path?: string };
+    const cookie = teraboxCookie(id);
+    if (cookie) {
+      try { await orch.terabox.mkdir(cookie, absPath(p)); return { ok: true }; }
+      catch (e) { return opError(reply, "mkdir_failed", e); }
+    }
     let target: string;
     try { target = orch.remotes.target(id, p ?? ""); } catch (e) { return badTarget(reply, e); }
     const r = await orch.rclone.mkdir(target);
@@ -274,6 +293,11 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
   app.post("/api/remotes/:id/ops/delete", async (req, reply) => {
     const { id } = req.params as { id: string };
     const { path: p, isDir } = (req.body ?? {}) as { path?: string; isDir?: boolean };
+    const cookie = teraboxCookie(id);
+    if (cookie) {
+      try { await orch.terabox.manage(cookie, "delete", [absPath(p)]); return { ok: true }; }
+      catch (e) { return opError(reply, "delete_failed", e); }
+    }
     let target: string;
     try { target = orch.remotes.target(id, p ?? ""); } catch (e) { return badTarget(reply, e); }
     const r = isDir ? await orch.rclone.purge(target) : await orch.rclone.deleteFile(target);
@@ -284,11 +308,42 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     const { id } = req.params as { id: string };
     const { path: p, newName } = (req.body ?? {}) as { path?: string; newName?: string };
     if (!p || !newName) return reply.code(400).send({ error: "bad_request", message: "path and newName required" });
+    const cookie = teraboxCookie(id);
+    if (cookie) {
+      try { await orch.terabox.manage(cookie, "rename", [{ path: absPath(p), newname: newName }]); return { ok: true }; }
+      catch (e) { return opError(reply, "rename_failed", e); }
+    }
     const dst = path.posix.join(path.posix.dirname(p), newName);
     let srcT: string, dstT: string;
     try { srcT = orch.remotes.target(id, p); dstT = orch.remotes.target(id, dst); } catch (e) { return badTarget(reply, e); }
     const r = await orch.rclone.moveto(srcT, dstT);
     return r.code === 0 ? { ok: true } : reply.code(400).send({ error: "rename_failed", message: rcloneError(r) });
+  });
+
+  // Upload a file from the user's computer: the browser streams the file as the
+  // raw request body and we pipe it into `rclone rcat <remote>:<dir>/<name>`.
+  // Upload progress/speed is measured client-side (XHR upload events).
+  app.post("/api/remotes/:id/upload", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const q = req.query as { path?: string; name?: string };
+    if (!q.name) return reply.code(400).send({ error: "bad_request", message: "name required" });
+    const dest = q.path ? `${q.path.replace(/\/+$/, "")}/${q.name}` : q.name;
+    let target: string;
+    try { target = orch.remotes.target(id, dest); } catch (e) { return badTarget(reply, e); }
+
+    const child = orch.rclone.rcatProcess(target);
+    const stream = req.body as NodeJS.ReadableStream;
+    let stderr = "";
+    child.stderr.on("data", (d) => { stderr += d.toString(); });
+    const done = new Promise<number>((resolve) => child.on("close", (code) => resolve(code ?? 1)));
+    stream.pipe(child.stdin);
+    stream.on("error", () => child.kill());
+    const code = await done;
+    if (code === 0) return { ok: true };
+    return reply.code(400).send({
+      error: "upload_failed",
+      message: stderr.split("\n").filter(Boolean).pop()?.slice(0, 300) ?? "upload failed",
+    });
   });
 
   // Copy or move (cut/paste) between any two remotes/paths.
@@ -299,6 +354,20 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     };
     if (!b.srcRemoteId || !b.dstRemoteId || b.dstPath == null) {
       return reply.code(400).send({ error: "bad_request", message: "missing fields" });
+    }
+    // Same TeraBox remote → use its filemanager API (rclone can't move/copy it).
+    const cookie = b.srcRemoteId === b.dstRemoteId ? teraboxCookie(b.srcRemoteId) : null;
+    if (cookie) {
+      try {
+        await orch.terabox.manage(cookie, b.op === "move" ? "move" : "copy", [
+          {
+            path: absPath(b.srcPath),
+            dest: absPath(path.posix.dirname(b.dstPath)),
+            newname: path.posix.basename(b.dstPath),
+          },
+        ]);
+        return { ok: true };
+      } catch (e) { return opError(reply, "transfer_failed", e); }
     }
     let src: string, dst: string;
     try {

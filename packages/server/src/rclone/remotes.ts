@@ -591,11 +591,12 @@ export class RemoteService {
         // The just-uploaded file may take a moment to be indexed, so retry.
         const cookie = this.getParam(remoteId, "cookie");
         if (cookie) {
-          for (let i = 0; i < 4 && downloadBytesPerSec === null; i++) {
+          for (let i = 0; i < 2 && downloadBytesPerSec === null; i++) {
             try {
               const t2 = Date.now();
               const { url, headers } = await this.terabox.resolveDownload(cookie, testName);
-              const res = await fetch(url, { headers });
+              // Bound the byte-fetch so a stalled CDN can't make the test hang.
+              const res = await fetch(url, { headers, signal: AbortSignal.timeout(20_000) });
               const bytes = (await res.arrayBuffer()).byteLength;
               const downMs = Date.now() - t2;
               if (res.ok && bytes > 0) {
@@ -603,7 +604,7 @@ export class RemoteService {
               }
             } catch (e) {
               this.logger.debug({ err: String(e), attempt: i }, "terabox speedtest download retry");
-              await new Promise((r) => setTimeout(r, 1500));
+              await new Promise((r) => setTimeout(r, 1000));
             }
           }
         }

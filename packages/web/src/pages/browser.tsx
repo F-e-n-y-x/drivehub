@@ -21,8 +21,10 @@ import {
   Scissors,
   Search,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { FsListing, RemoteEntry, RemotePublic } from "@drivehub/types";
 import {
   useBrowse,
@@ -67,10 +69,13 @@ import { cn, formatBytes, formatRelativeTime } from "@/lib/utils";
 import {
   fileUrl,
   fsFileUrl,
+  qk,
+  uploadFile,
   type ApiError,
   type TransferOpInput,
 } from "@/lib/api";
 import { useClipboardStore } from "@/store/clipboard";
+import { useTransfersStore } from "@/store/transfers";
 import { useBrowserTabsStore, type BrowserTab } from "@/store/browser-tabs";
 
 type SortKey = "name" | "size" | "modified";
@@ -454,6 +459,9 @@ function FileManager({
 
   const ops = useBrowseMutations(remoteId, path);
   const clipboard = useClipboardStore();
+  const qc = useQueryClient();
+  const transfers = useTransfersStore();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const normalized = useMemo(() => {
     if (isLocalFs) {
@@ -556,6 +564,37 @@ function FileManager({
     [anchor, visible],
   );
 
+  // Additive checkbox toggle — flips ONLY this item without clearing the rest.
+  // Supports shift-click on a checkbox for a range select (extends the set).
+  const toggleOne = useCallback(
+    (entry: RemoteEntry, e: { shiftKey: boolean }) => {
+      const path = entry.path;
+      if (e.shiftKey && anchor) {
+        const order = visible.map((v) => v.path);
+        const a = order.indexOf(anchor);
+        const b = order.indexOf(path);
+        if (a !== -1 && b !== -1) {
+          const [lo, hi] = a < b ? [a, b] : [b, a];
+          setSelected((prev) => {
+            const next = new Set(prev);
+            for (const p of order.slice(lo, hi + 1)) next.add(p);
+            return next;
+          });
+          setAnchor(path);
+          return;
+        }
+      }
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(path)) next.delete(path);
+        else next.add(path);
+        return next;
+      });
+      setAnchor(path);
+    },
+    [anchor, visible],
+  );
+
   const toggleAll = useCallback(() => {
     setSelected((prev) =>
       prev.size === visible.length && visible.length > 0
@@ -586,6 +625,7 @@ function FileManager({
     if (!clipboard.op || !clipboard.remoteId || clipboard.entries.length === 0)
       return;
     const op = clipboard.op === "cut" ? "move" : "copy";
+    const count = clipboard.entries.length;
     const payload: TransferOpInput[] = clipboard.entries.map((e) => ({
       srcRemoteId: clipboard.remoteId!,
       srcPath: e.path,
@@ -593,12 +633,25 @@ function FileManager({
       dstPath: path ? `${path}/${e.name}` : e.name,
       op,
     }));
+    // Awaited mutation (no byte progress) → indeterminate transfer card.
+    const trId = transfers.add({
+      id: "",
+      kind: op,
+      title:
+        count === 1
+          ? clipboard.entries[0]!.name
+          : `${count} items`,
+      status: "active",
+      progress: null,
+    });
     ops.paste.mutate(payload, {
       onSuccess: () => {
+        transfers.finish(trId, "done");
         // Cut consumes the clipboard; copy keeps it for repeat pastes.
         if (clipboard.op === "cut") clipboard.clear();
         clearSelection();
       },
+      onError: (e: Error) => transfers.finish(trId, "error", e.message),
     });
   };
 
@@ -622,6 +675,49 @@ function FileManager({
       a.click();
       a.remove();
     }
+  };
+
+  // --- Upload from this computer -------------------------------------------
+
+  /** Invalidate the current folder's listing so a fresh upload shows up. */
+  const refetchFolder = useCallback(() => {
+    qc.invalidateQueries({ queryKey: qk.browse(remoteId, path) });
+  }, [qc, remoteId, path]);
+
+  /** Upload one file, streaming progress into the Transfers panel. */
+  const uploadOne = useCallback(
+    (file: File) => {
+      const id = transfers.add({
+        id: "",
+        kind: "upload",
+        title: file.name,
+        status: "active",
+        progress: 0,
+      });
+      const handle = uploadFile(remoteId, path, file, {
+        onProgress: ({ loaded, total }) =>
+          transfers.reportProgress(id, loaded, total),
+      });
+      // Expose the aborter so the card's X can cancel the XHR.
+      transfers.update(id, { abort: handle.abort });
+      handle.promise.then(
+        () => {
+          transfers.finish(id, "done");
+          refetchFolder();
+        },
+        (err: ApiError) => {
+          // A user-initiated cancel is expected; show it but don't toast-spam.
+          transfers.finish(id, "error", err?.message ?? "Upload failed");
+          refetchFolder();
+        },
+      );
+    },
+    [remoteId, path, transfers, refetchFolder],
+  );
+
+  const onPickFiles = (files: FileList | null) => {
+    if (!files || isLocalFs) return;
+    for (const file of Array.from(files)) uploadOne(file);
   };
 
   // --- Keyboard: Esc clears selection --------------------------------------
@@ -727,6 +823,26 @@ function FileManager({
                 <FilePlus className="size-4" />
                 New file
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="size-4" />
+                Upload
+              </Button>
+              {/* Hidden picker — uploads stream to the current remote+path. */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  onPickFiles(e.target.files);
+                  // Reset so picking the same file again re-triggers change.
+                  e.target.value = "";
+                }}
+              />
 
               <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
 
@@ -913,6 +1029,7 @@ function FileManager({
             someSelected={someSelected}
             onToggleAll={toggleAll}
             onSelect={onRowSelect}
+            onToggle={toggleOne}
             onOpen={open}
             actions={(entry) => (
               <RowMenu
@@ -942,6 +1059,7 @@ function FileManager({
             entries={visible}
             selected={selected}
             onSelect={onRowSelect}
+            onToggle={toggleOne}
             onOpen={open}
             actions={(entry) => (
               <RowMenu
@@ -1027,13 +1145,23 @@ function FileManager({
         onCancel={() => setDeleteTargets(null)}
         onConfirm={() => {
           if (!deleteTargets) return;
+          const count = deleteTargets.length;
+          const trId = transfers.add({
+            id: "",
+            kind: "delete",
+            title: count === 1 ? deleteTargets[0]!.name : `${count} items`,
+            status: "active",
+            progress: null,
+          });
           ops.remove.mutate(
             deleteTargets.map((e) => ({ path: e.path, isDir: e.isDir })),
             {
               onSuccess: () => {
+                transfers.finish(trId, "done");
                 setDeleteTargets(null);
                 clearSelection();
               },
+              onError: (e: Error) => transfers.finish(trId, "error", e.message),
             },
           );
         }}
@@ -1271,6 +1399,7 @@ function ListView({
   someSelected,
   onToggleAll,
   onSelect,
+  onToggle,
   onOpen,
   actions,
   onContextMenuRow,
@@ -1281,6 +1410,8 @@ function ListView({
   someSelected: boolean;
   onToggleAll: () => void;
   onSelect: (entry: RemoteEntry, e: RowEvent) => void;
+  /** Additive checkbox toggle — adds/removes only this item. */
+  onToggle: (entry: RemoteEntry, e: { shiftKey: boolean }) => void;
   onOpen: (entry: RemoteEntry) => void;
   actions: (entry: RemoteEntry) => React.ReactNode;
   onContextMenuRow: (entry: RemoteEntry) => void;
@@ -1333,11 +1464,7 @@ function ListView({
                     <Checkbox
                       checked={isSel}
                       onChange={(_v, ev) =>
-                        onSelect(entry, {
-                          metaKey: ev.metaKey,
-                          ctrlKey: ev.ctrlKey,
-                          shiftKey: ev.shiftKey,
-                        })
+                        onToggle(entry, { shiftKey: ev.shiftKey })
                       }
                       aria-label={`Select ${entry.name}`}
                     />
@@ -1402,6 +1529,7 @@ function GridView({
   entries,
   selected,
   onSelect,
+  onToggle,
   onOpen,
   actions,
   onContextMenuRow,
@@ -1409,6 +1537,8 @@ function GridView({
   entries: RemoteEntry[];
   selected: Set<string>;
   onSelect: (entry: RemoteEntry, e: RowEvent) => void;
+  /** Additive checkbox toggle — adds/removes only this item. */
+  onToggle: (entry: RemoteEntry, e: { shiftKey: boolean }) => void;
   onOpen: (entry: RemoteEntry) => void;
   actions: (entry: RemoteEntry) => React.ReactNode;
   onContextMenuRow: (entry: RemoteEntry) => void;
@@ -1434,12 +1564,31 @@ function GridView({
                 onDoubleClick={() => onOpen(entry)}
                 title={entry.name}
                 className={cn(
-                  "flex cursor-pointer flex-col items-center gap-2 rounded-lg border p-4 text-center transition-colors",
+                  "group relative flex cursor-pointer flex-col items-center gap-2 rounded-lg border p-4 text-center transition-colors",
                   isSel
                     ? "border-accent/40 bg-accent-muted/60"
                     : "border-transparent hover:border-border hover:bg-muted/40",
                 )}
               >
+                {/* Per-tile checkbox: always shown when selected, on hover
+                    otherwise. Toggles selection additively without opening. */}
+                <div
+                  className={cn(
+                    "absolute left-2 top-2 transition-opacity",
+                    isSel
+                      ? "opacity-100"
+                      : "opacity-0 focus-within:opacity-100 group-hover:opacity-100",
+                  )}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Checkbox
+                    checked={isSel}
+                    onChange={(_v, ev) =>
+                      onToggle(entry, { shiftKey: ev.shiftKey })
+                    }
+                    aria-label={`Select ${entry.name}`}
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={(e) => {

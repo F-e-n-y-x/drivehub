@@ -19,6 +19,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { SimpleTooltip } from "@/components/ui/tooltip";
 import { fileUrl } from "@/lib/api";
 import { entryIcon } from "@/lib/file-icons";
+import { VideoPlayer } from "@/components/video-player";
 import { cn, formatBytes } from "@/lib/utils";
 
 /** Files larger than this are not fetched for text preview. */
@@ -321,20 +322,7 @@ function PreviewStage({
     return <ImageStage src={src} alt={entry.name} onError={() => setErrored(true)} />;
 
   if (kind === "video")
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-black p-4">
-        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-        <video
-          src={src}
-          controls
-          autoPlay
-          onError={() => setErrored(true)}
-          className="max-h-full max-w-full"
-        >
-          Your browser can't play this video.
-        </video>
-      </div>
-    );
+    return <VideoPlayer src={src} />;
 
   if (kind === "audio")
     return (

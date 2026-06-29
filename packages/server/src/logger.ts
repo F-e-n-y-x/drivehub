@@ -13,9 +13,15 @@ const terminal = isDev
   ? pretty({ colorize: true, translateTime: "HH:MM:ss", ignore: "pid,hostname" })
   : process.stdout;
 
+// Per-stream level "trace" so neither stream drops below-info lines on its own:
+// the single `logger.level` gate (changeable at runtime via Settings) decides
+// what's emitted, and both the terminal and the in-memory capture see all of it.
 export const logger = pino(
   { level },
-  pino.multistream([{ stream: terminal }, { stream: createLogCaptureStream() }]),
+  pino.multistream([
+    { stream: terminal, level: "trace" },
+    { stream: createLogCaptureStream(), level: "trace" },
+  ]),
 );
 
 export type Logger = typeof logger;

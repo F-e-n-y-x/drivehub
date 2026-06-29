@@ -119,6 +119,83 @@ export function fsFileUrl(path: string, download?: boolean): string {
   return `/api/fs/file?${params.toString()}`;
 }
 
+/** Progress tick for an in-flight upload. */
+export interface UploadProgress {
+  /** Bytes sent so far. */
+  loaded: number;
+  /** Total bytes to send (file size). */
+  total: number;
+}
+
+/** Handle returned by {@link uploadFile}: the result promise + an aborter. */
+export interface UploadHandle {
+  /** Resolves on success; rejects with an {@link ApiError} on failure/abort. */
+  promise: Promise<void>;
+  /** Aborts the in-flight request (rejects `promise` with a cancel error). */
+  abort: () => void;
+}
+
+/**
+ * Uploads one local file to `remoteId` at `dir` via
+ * `POST /api/remotes/:id/upload?path=<dir>&name=<file>` with the file as the
+ * RAW request body (`application/octet-stream`). Uses XMLHttpRequest so the
+ * caller can observe byte-level upload progress (loaded/total) for speed/ETA —
+ * something `fetch` can't report. Returns both the result promise and an
+ * `abort()` handle so the Transfers panel can cancel mid-flight.
+ */
+export function uploadFile(
+  remoteId: string,
+  dir: string,
+  file: File,
+  opts?: { onProgress?: (p: UploadProgress) => void },
+): UploadHandle {
+  const xhr = new XMLHttpRequest();
+  const params = new URLSearchParams({ path: dir, name: file.name });
+  const url = `/api/remotes/${encodeURIComponent(remoteId)}/upload?${params.toString()}`;
+
+  const promise = new Promise<void>((resolve, reject) => {
+    xhr.open("POST", url);
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.responseType = "text";
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        opts?.onProgress?.({ loaded: e.loaded, total: e.total });
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+        return;
+      }
+      // Try to surface the server's JSON error message.
+      let message = `${xhr.status} ${xhr.statusText}`;
+      let code: string | undefined;
+      try {
+        const body = JSON.parse(xhr.responseText) as {
+          error?: string;
+          message?: string;
+        };
+        if (body?.message) message = body.message;
+        if (body?.error) code = body.error;
+      } catch {
+        /* non-JSON error body */
+      }
+      reject(new ApiError(message, xhr.status, code));
+    };
+
+    xhr.onerror = () =>
+      reject(new ApiError("Network error during upload", 0, "network_error"));
+    xhr.onabort = () =>
+      reject(new ApiError("Upload canceled", 0, "aborted"));
+
+    xhr.send(file);
+  });
+
+  return { promise, abort: () => xhr.abort() };
+}
+
 export const api = {
   health: () => request<OkResponse>("/api/health"),
   status: () => request<EngineStatus>("/api/status"),

@@ -80,7 +80,7 @@ export class TeraBoxClient {
     if (!dlink) return null;
 
     // The dlink 302s to the real CDN URL; read Location without following.
-    const res = await fetch(dlink, {
+    const res = await tfetch(dlink, {
       headers: { Cookie: cookie, "User-Agent": UA },
       redirect: "manual",
     });
@@ -95,6 +95,7 @@ export class TeraBoxClient {
     cookie: string,
     apiPath: string,
     params: Record<string, string>,
+    body?: string,
     depth = 0,
   ): Promise<{ body: Record<string, unknown> }> {
     const s = await this.session(cookie);
@@ -102,27 +103,52 @@ export class TeraBoxClient {
     for (const [k, v] of Object.entries({ ...COMMON, jsToken: s.jsToken, ...params })) {
       url.searchParams.set(k, v);
     }
-    const res = await fetch(url, { headers: this.headers(cookie, s.base) });
+    const init: RequestInit = { headers: this.headers(cookie, s.base) };
+    if (body != null) {
+      init.method = "POST";
+      init.body = body;
+      init.headers = { ...this.headers(cookie, s.base), "Content-Type": "application/x-www-form-urlencoded" };
+    }
+    const res = await tfetch(url, init);
     const prefix = res.headers.get("url-domain-prefix");
-    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-    const errno = body.errno as number | undefined;
+    const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    const errno = json.errno as number | undefined;
 
     if (depth < 2 && errno === -6 && prefix) {
-      this.sessions.set(cookie, {
-        ...s,
-        base: `https://${prefix}.terabox.com`,
-        at: Date.now(),
-      });
-      // jsToken is host-specific — refresh on the new domain.
+      // jsToken is host-specific — switch domain and refresh on the new host.
       this.sessions.delete(cookie);
-      return this.apiCall(cookie, apiPath, params, depth + 1);
+      this.sessions.set(cookie, { ...s, base: `https://${prefix}.terabox.com`, at: 0 });
+      return this.apiCall(cookie, apiPath, params, body, depth + 1);
     }
     if (depth < 2 && (errno === 4000023 || errno === 450016)) {
       this.sessions.delete(cookie);
-      return this.apiCall(cookie, apiPath, params, depth + 1);
+      return this.apiCall(cookie, apiPath, params, body, depth + 1);
     }
     if (errno === 9000) throw new Error("terabox: not available in this region for this account");
-    return { body };
+    return { body: json };
+  }
+
+  /** File-manager op (move/copy/rename/delete). Throws on a non-zero errno. */
+  async manage(
+    rawCookie: string,
+    opera: "move" | "copy" | "rename" | "delete",
+    filelist: unknown[],
+  ): Promise<void> {
+    const cookie = sanitizeCookie(rawCookie);
+    const body = `async=0&filelist=${encodeURIComponent(JSON.stringify(filelist))}&ondup=newcopy`;
+    const res = await this.apiCall(cookie, "/api/filemanager", { onnest: "fail", opera }, body);
+    const errno = res.body.errno as number | undefined;
+    if (errno !== 0) throw new Error(`terabox ${opera} failed (errno=${errno})`);
+  }
+
+  /** Create a directory. */
+  async mkdir(rawCookie: string, dirPath: string): Promise<void> {
+    const cookie = sanitizeCookie(rawCookie);
+    const p = dirPath.startsWith("/") ? dirPath : `/${dirPath}`;
+    const body = `path=${encodeURIComponent(p)}&isdir=1&block_list=%5B%5D`;
+    const res = await this.apiCall(cookie, "/api/create", { a: "commit" }, body);
+    const errno = res.body.errno as number | undefined;
+    if (errno !== 0) throw new Error(`terabox mkdir failed (errno=${errno})`);
   }
 
   private async session(cookie: string): Promise<Session> {
@@ -137,7 +163,7 @@ export class TeraBoxClient {
     for (const [k, v] of Object.entries({ ...COMMON, jsToken, dir: "/", num: "1", page: "1" })) {
       probe.searchParams.set(k, v);
     }
-    const res = await fetch(probe, { headers: this.headers(cookie, base) });
+    const res = await tfetch(probe, { headers: this.headers(cookie, base) });
     const prefix = res.headers.get("url-domain-prefix");
     const body = (await res.json().catch(() => ({}))) as { errno?: number };
     if (body.errno === -6 && prefix) {
@@ -151,7 +177,7 @@ export class TeraBoxClient {
   }
 
   private async fetchJsToken(cookie: string, base: string): Promise<string> {
-    const res = await fetch(`${base}/main`, { headers: this.headers(cookie, base) });
+    const res = await tfetch(`${base}/main`, { headers: this.headers(cookie, base) });
     const html = await res.text();
     const m = /fn%28%22([0-9A-Fa-f]+)%22%29/.exec(html);
     if (!m || !m[1]) throw new Error("terabox: jsToken not found (cookie expired?)");
@@ -167,6 +193,11 @@ export class TeraBoxClient {
       "X-Requested-With": "XMLHttpRequest",
     };
   }
+}
+
+/** fetch with a hard timeout so a stalled TeraBox call can't hang a request. */
+function tfetch(input: string | URL, init: RequestInit = {}): Promise<Response> {
+  return fetch(input, { ...init, signal: AbortSignal.timeout(8000) });
 }
 
 /**
