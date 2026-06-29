@@ -9,13 +9,7 @@ import {
 } from "lucide-react";
 import type { ComponentUpdate, UpdateStatus } from "@drivehub/types";
 import { useUpdates, useUpdateActions } from "@/hooks/queries";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -185,20 +179,23 @@ export function UpdatesSection() {
   const { checkNow } = useUpdateActions();
 
   return (
-    <Card id="updates" className="scroll-mt-20">
-      <CardHeader className="flex-row items-start justify-between gap-4">
+    <section id="updates" className="scroll-mt-24">
+      <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
-          <CardTitle>Updates</CardTitle>
-          <CardDescription>
+          <h2 className="text-base font-semibold tracking-tight text-foreground">
+            Updates
+          </h2>
+          <p className="text-sm text-muted-foreground">
             {data
               ? `Last checked ${formatRelativeTime(data.checkedAt)}.`
               : "Keep rclone and DriveHub up to date."}
-          </CardDescription>
+          </p>
         </div>
         <Button
           type="button"
           variant="outline"
           size="sm"
+          className="shrink-0"
           disabled={checkNow.isPending}
           onClick={() => checkNow.mutate()}
         >
@@ -209,8 +206,8 @@ export function UpdatesSection() {
           )}
           Check for updates
         </Button>
-      </CardHeader>
-      <CardContent className="space-y-3">
+      </div>
+      <div className="space-y-3 pt-5">
         {isLoading || !data ? (
           <>
             <Skeleton className="h-20 rounded-xl" />
@@ -222,7 +219,7 @@ export function UpdatesSection() {
             <AppRow data={data} />
           </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

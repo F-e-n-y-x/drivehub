@@ -1,13 +1,6 @@
 import { RefreshCw } from "lucide-react";
 import type { SystemInfo } from "@drivehub/types";
 import { useSystem } from "@/hooks/queries";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -96,28 +89,29 @@ export function SystemSection() {
   const { data, isLoading, isError, isFetching, refetch } = useSystem();
 
   return (
-    <Card id="system" className="scroll-mt-20">
-      <CardHeader className="flex-row items-start justify-between gap-4">
+    <section id="system" className="scroll-mt-24">
+      <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
-          <CardTitle>System</CardTitle>
-          <CardDescription>
+          <h2 className="text-base font-semibold tracking-tight text-foreground">
+            System
+          </h2>
+          <p className="text-sm text-muted-foreground">
             Runtime environment and diagnostics for this instance.
-          </CardDescription>
+          </p>
         </div>
         <Button
           type="button"
           variant="outline"
           size="sm"
+          className="shrink-0"
           disabled={isFetching}
           onClick={() => refetch()}
         >
-          <RefreshCw
-            className={cn("size-4", isFetching && "animate-spin")}
-          />
+          <RefreshCw className={cn("size-4", isFetching && "animate-spin")} />
           Refresh
         </Button>
-      </CardHeader>
-      <CardContent>
+      </div>
+      <div className="pt-5">
         {isError ? (
           <QueryError onRetry={() => refetch()} />
         ) : isLoading || !data ? (
@@ -135,7 +129,7 @@ export function SystemSection() {
         ) : (
           <SystemDetails data={data} />
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

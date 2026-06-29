@@ -32,7 +32,6 @@ import {
   useFsBrowse,
   useRemotes,
 } from "@/hooks/queries";
-import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -200,12 +199,7 @@ export function BrowserPage() {
   }, [remotes]);
 
   return (
-    <div className="flex h-full min-h-[32rem] w-full flex-col gap-6">
-      <PageHeader
-        title="Remote Browser"
-        description="Browse, organize, and manage files on any connected remote."
-      />
-
+    <div className="flex h-full min-h-[32rem] w-full flex-col gap-4">
       {remotesLoading ? (
         <Skeleton className="h-80 w-full rounded-xl" />
       ) : (
