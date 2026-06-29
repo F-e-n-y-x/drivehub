@@ -107,7 +107,26 @@ export const REMOTE_CATALOG: RemoteTypeInfo[] = [
     description: "Connect a Microsoft OneDrive account.",
     fields: [],
   },
+  {
+    type: "icloud",
+    label: "iCloud Drive (experimental)",
+    oauth: false,
+    description:
+      "Connect iCloud Drive with an Apple ID and an app-specific password. Experimental — accounts with Advanced Data Protection are not supported, and 2FA can interrupt sign-in.",
+    fields: [
+      { key: "apple_id", label: "Apple ID", type: "text", required: true, placeholder: "you@icloud.com" },
+      { key: "password", label: "App-specific password", type: "password", required: true, help: "Create one at appleid.apple.com → Sign-In and Security → App-Specific Passwords." },
+    ],
+  },
 ];
+
+/** Map a DriveHub remote type to the underlying rclone backend type. */
+const RCLONE_BACKEND: Partial<Record<RemoteType, string>> = {
+  icloud: "iclouddrive",
+};
+function rcloneBackend(type: RemoteType): string {
+  return RCLONE_BACKEND[type] ?? type;
+}
 
 const SECRET_KEYS = new Set([
   "secret_access_key",
@@ -162,7 +181,7 @@ export class RemoteService {
       if (row.type === "local") continue; // local needs no rclone remote
       try {
         const params = this.decryptParams(row.configEnc);
-        await this.rclone.configCreate(row.name, row.type, params);
+        await this.rclone.configCreate(row.name, rcloneBackend(row.type as RemoteType), params);
       } catch (e) {
         this.logger.error({ err: String(e), remote: row.name }, "failed to rebuild rclone remote");
       }
@@ -184,7 +203,7 @@ export class RemoteService {
     const params = pruneEmpty(input.params);
 
     if (input.type !== "local") {
-      await this.rclone.configCreate(name, input.type, params);
+      await this.rclone.configCreate(name, rcloneBackend(input.type), params);
     }
     const row = this.repo.insertRemote({
       name,
@@ -205,7 +224,35 @@ export class RemoteService {
     extra?: Record<string, string>;
   }): Promise<RemotePublic> {
     const params: Record<string, string> = { token: input.tokenJson, ...(input.extra ?? {}) };
-    return this.create({ type: input.type, label: input.label, params });
+    const remote = await this.create({ type: input.type, label: input.label, params });
+    // Best-effort: capture the account email/identity so the UI can show it.
+    const email = await this.fetchAccountEmail(remote.name);
+    if (email) {
+      const row = this.repo.getRemote(remote.id);
+      if (row) {
+        const summary = { ...safeJson(row.summary), email };
+        this.repo.updateRemote(remote.id, { summary: JSON.stringify(summary) });
+        return toRemotePublic(this.repo.getRemote(remote.id)!);
+      }
+    }
+    return remote;
+  }
+
+  private async fetchAccountEmail(remoteName: string): Promise<string | null> {
+    try {
+      const info = await this.rclone.userInfo(remoteName);
+      return (
+        info.email ??
+        info.Email ??
+        info.emailAddress ??
+        info.login ??
+        info.user ??
+        info.owner ??
+        null
+      );
+    } catch {
+      return null;
+    }
   }
 
   async delete(id: string): Promise<void> {
@@ -274,6 +321,14 @@ export class RemoteService {
       breadcrumbs.push({ name: part, path: acc });
     }
     return { remoteId, path: subPath, breadcrumbs, entries };
+  }
+}
+
+function safeJson(s: string): Record<string, string> {
+  try {
+    return JSON.parse(s) as Record<string, string>;
+  } catch {
+    return {};
   }
 }
 

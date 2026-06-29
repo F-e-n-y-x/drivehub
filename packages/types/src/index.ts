@@ -18,6 +18,7 @@ export type RemoteType =
   | "drive"
   | "dropbox"
   | "onedrive"
+  | "icloud"
   | "webdav"
   | "smb"
   | "sftp";

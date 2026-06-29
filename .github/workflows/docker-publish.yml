@@ -39,9 +39,8 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,format=short
+            type=semver,pattern=v{{version}}
+            type=semver,pattern=v{{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push
@@ -51,6 +50,10 @@ jobs:
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
+          # Don't publish provenance/SBOM attestations — they show up as extra
+          # untagged manifests in the registry and just add clutter.
+          provenance: false
+          sbom: false
           build-args: |
             APP_VERSION=${{ steps.meta.outputs.version }}
             GIT_SHA=${{ github.sha }}

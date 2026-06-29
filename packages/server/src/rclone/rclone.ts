@@ -161,6 +161,49 @@ export class RcloneService {
     return code === 0 ? { ok: true } : { ok: false, error: stderr.slice(0, 300) };
   }
 
+  /** Account identity for an OAuth remote (email etc.), via config userinfo. */
+  async userInfo(remoteName: string): Promise<Record<string, string>> {
+    const { code, stdout } = await this.run(["config", "userinfo", `${remoteName}:`, "--json"]);
+    if (code !== 0) return {};
+    try {
+      const j = JSON.parse(stdout) as Record<string, unknown>;
+      const out: Record<string, string> = {};
+      for (const [k, v] of Object.entries(j)) {
+        if (typeof v === "string" || typeof v === "number") out[k] = String(v);
+      }
+      return out;
+    } catch {
+      return {};
+    }
+  }
+
+  // ----- file operations -------------------------------------------------
+  async mkdir(target: string): Promise<RcloneResult> {
+    return this.run(["mkdir", target]);
+  }
+  async deleteFile(target: string): Promise<RcloneResult> {
+    return this.run(["deletefile", target]);
+  }
+  /** Recursively delete a directory and its contents. */
+  async purge(target: string): Promise<RcloneResult> {
+    return this.run(["purge", target]);
+  }
+  async moveto(src: string, dst: string): Promise<RcloneResult> {
+    return this.run(["moveto", src, dst]);
+  }
+  async copyto(src: string, dst: string): Promise<RcloneResult> {
+    return this.run(["copyto", src, dst]);
+  }
+  /** Create an empty file (or update its mod time). */
+  async touch(target: string): Promise<RcloneResult> {
+    return this.run(["touch", target]);
+  }
+
+  /** Spawn `rclone cat` and return the process; caller pipes stdout. */
+  catProcess(target: string) {
+    return spawn(this.bin, [...this.baseArgs(), "cat", target], { windowsHide: true });
+  }
+
   /**
    * Run a transfer operation (sync/copy/bisync), streaming rclone's JSON stats
    * via onStats. Resolves with the final result when the process exits.

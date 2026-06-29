@@ -14,7 +14,7 @@ import type { Logger } from "../logger.js";
 import type { Orchestrator } from "../orchestrator.js";
 import { authUrl, exchangeCodeForRclone } from "../google/oauth.js";
 
-const REMOTE_TYPES = ["local", "s3", "b2", "drive", "dropbox", "onedrive", "webdav", "smb", "sftp"] as const;
+const REMOTE_TYPES = ["local", "s3", "b2", "drive", "dropbox", "onedrive", "icloud", "webdav", "smb", "sftp"] as const;
 
 const SettingsSchema = z.object({
   concurrency: z.number().int().min(1).max(32),
@@ -149,6 +149,81 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     } catch (e) {
       return reply.code(400).send({ error: "browse_failed", message: String((e as Error).message ?? e) });
     }
+  });
+
+  // ----- file operations (browser: mkdir/touch/delete/rename/copy/move) --
+  const rcloneError = (r: { code: number; stderr: string }) =>
+    r.stderr.split("\n").filter(Boolean).pop()?.slice(0, 300) ?? "operation failed";
+
+  app.post("/api/remotes/:id/ops/mkdir", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { path: p } = (req.body ?? {}) as { path?: string };
+    const r = await orch.rclone.mkdir(orch.remotes.target(id, p ?? ""));
+    return r.code === 0 ? { ok: true } : reply.code(400).send({ error: "mkdir_failed", message: rcloneError(r) });
+  });
+
+  app.post("/api/remotes/:id/ops/touch", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { path: p } = (req.body ?? {}) as { path?: string };
+    const r = await orch.rclone.touch(orch.remotes.target(id, p ?? ""));
+    return r.code === 0 ? { ok: true } : reply.code(400).send({ error: "touch_failed", message: rcloneError(r) });
+  });
+
+  app.post("/api/remotes/:id/ops/delete", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { path: p, isDir } = (req.body ?? {}) as { path?: string; isDir?: boolean };
+    const target = orch.remotes.target(id, p ?? "");
+    const r = isDir ? await orch.rclone.purge(target) : await orch.rclone.deleteFile(target);
+    return r.code === 0 ? { ok: true } : reply.code(400).send({ error: "delete_failed", message: rcloneError(r) });
+  });
+
+  app.post("/api/remotes/:id/ops/rename", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { path: p, newName } = (req.body ?? {}) as { path?: string; newName?: string };
+    if (!p || !newName) return reply.code(400).send({ error: "bad_request", message: "path and newName required" });
+    const dst = path.posix.join(path.posix.dirname(p), newName);
+    const r = await orch.rclone.moveto(orch.remotes.target(id, p), orch.remotes.target(id, dst));
+    return r.code === 0 ? { ok: true } : reply.code(400).send({ error: "rename_failed", message: rcloneError(r) });
+  });
+
+  // Copy or move (cut/paste) between any two remotes/paths.
+  app.post("/api/transfer-op", async (req, reply) => {
+    const b = (req.body ?? {}) as {
+      srcRemoteId?: string; srcPath?: string;
+      dstRemoteId?: string; dstPath?: string; op?: "copy" | "move";
+    };
+    if (!b.srcRemoteId || !b.dstRemoteId || b.dstPath == null) {
+      return reply.code(400).send({ error: "bad_request", message: "missing fields" });
+    }
+    const src = orch.remotes.target(b.srcRemoteId, b.srcPath ?? "");
+    const dst = orch.remotes.target(b.dstRemoteId, b.dstPath);
+    const r = b.op === "move" ? await orch.rclone.moveto(src, dst) : await orch.rclone.copyto(src, dst);
+    return r.code === 0 ? { ok: true } : reply.code(400).send({ error: "transfer_failed", message: rcloneError(r) });
+  });
+
+  // Stream a file's bytes (preview / download).
+  app.get("/api/remotes/:id/file", (req, reply) => {
+    const { id } = req.params as { id: string };
+    const q = req.query as { path?: string; download?: string };
+    if (!q.path) {
+      void reply.code(400).send({ error: "bad_request", message: "path required" });
+      return;
+    }
+    const remote = repo.getRemote(id);
+    if (!remote) {
+      void reply.code(404).send({ error: "not_found", message: "remote" });
+      return;
+    }
+    const target = orch.remotes.target(id, q.path);
+    const filename = path.posix.basename(q.path);
+    const child = orch.rclone.catProcess(target);
+    const headers: Record<string, string> = { "Content-Type": mimeFromName(filename) };
+    if (q.download != null) headers["Content-Disposition"] = `attachment; filename="${filename.replace(/"/g, "")}"`;
+    reply.raw.writeHead(200, headers);
+    child.stdout.pipe(reply.raw);
+    child.stderr.resume();
+    child.on("error", () => reply.raw.destroy());
+    req.raw.on("close", () => child.kill());
   });
 
   // ----- local filesystem browser (for the Local remote folder picker) ---
@@ -305,6 +380,23 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
   }
 
   return app;
+}
+
+const MIME: Record<string, string> = {
+  jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif",
+  webp: "image/webp", svg: "image/svg+xml", bmp: "image/bmp", ico: "image/x-icon",
+  avif: "image/avif", heic: "image/heic",
+  mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime", mkv: "video/x-matroska",
+  mp3: "audio/mpeg", wav: "audio/wav", flac: "audio/flac", ogg: "audio/ogg", m4a: "audio/mp4",
+  pdf: "application/pdf",
+  txt: "text/plain", md: "text/markdown", csv: "text/csv", log: "text/plain",
+  json: "application/json", xml: "application/xml", yaml: "text/plain", yml: "text/plain",
+  html: "text/html", css: "text/css", js: "text/javascript", ts: "text/plain",
+};
+
+function mimeFromName(name: string): string {
+  const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
+  return MIME[ext] ?? "application/octet-stream";
 }
 
 async function browseLocalFs(input?: string): Promise<import("@drivehub/types").FsListing> {
