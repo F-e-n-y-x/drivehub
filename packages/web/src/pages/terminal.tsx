@@ -38,7 +38,7 @@ export function TerminalPage() {
           <span className="font-mono">rclone authorize</span>, and more.
         </p>
       </div>
-      <div className="h-[calc(100dvh-11rem)] min-h-[420px] overflow-hidden rounded-xl border border-border bg-black">
+      <div className="h-[calc(100dvh-11rem)] min-h-[420px] overflow-hidden rounded-xl border border-border bg-[#111114] p-1.5">
         <iframe
           title="DriveHub terminal"
           src={`${data.path}/`}

@@ -34,12 +34,31 @@ export class TerminalManager {
   start(): void {
     if (!this.config.ENABLE_TERMINAL) return;
     const bin = this.config.TERMINAL_BIN ?? "ttyd";
+    // xterm theme matching the DriveHub dark UI (zinc surface, indigo accent).
+    const theme = JSON.stringify({
+      background: "#111114",
+      foreground: "#e7e7ea",
+      cursor: "#818cf8",
+      cursorAccent: "#111114",
+      selectionBackground: "#3b3f76",
+      selectionForeground: "#ffffff",
+      black: "#15151a", red: "#f87171", green: "#4ade80", yellow: "#fbbf24",
+      blue: "#818cf8", magenta: "#c084fc", cyan: "#22d3ee", white: "#d4d4d8",
+      brightBlack: "#52525b", brightRed: "#fca5a5", brightGreen: "#86efac",
+      brightYellow: "#fcd34d", brightBlue: "#a5b4fc", brightMagenta: "#d8b4fe",
+      brightCyan: "#67e8f9", brightWhite: "#fafafa",
+    });
     const args = [
       "-p", String(this.config.TERMINAL_PORT),
       "-i", "127.0.0.1", // never exposed directly — only via the DriveHub proxy
       "-b", TERMINAL_BASE_PATH,
       "-t", "titleFixed=DriveHub terminal",
-      "-t", "fontSize=14",
+      "-t", "fontSize=13",
+      "-t", "fontFamily=ui-monospace, 'JetBrains Mono', Menlo, Consolas, monospace",
+      "-t", "lineHeight=1.25",
+      "-t", "cursorBlink=true",
+      "-t", "scrollbar=false",
+      "-t", `theme=${theme}`,
       "-W", // allow input
       "bash",
     ];

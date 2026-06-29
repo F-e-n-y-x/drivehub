@@ -97,9 +97,16 @@ export const REMOTE_CATALOG: RemoteTypeInfo[] = [
     label: "Teldrive (Telegram)",
     oauth: false,
     description:
-      "Telegram-backed storage via your own Teldrive server (bundled rclone-extra backend). Point at the Teldrive instance and paste its session token.",
+      "Telegram-backed storage. Requires a self-hosted Teldrive server (github.com/tgdrive/teldrive) — DriveHub is only the client. Point at your Teldrive instance and paste its session token.",
     fields: [
-      { key: "api_host", label: "API host", type: "text", required: true, placeholder: "https://teldrive.example.com" },
+      {
+        key: "api_host",
+        label: "API host",
+        type: "text",
+        required: true,
+        placeholder: "https://teldrive.example.com",
+        help: "The URL of YOUR running Teldrive server (you deploy it separately — see github.com/tgdrive/teldrive). This isn't a Telegram URL.",
+      },
       {
         key: "access_token",
         label: "Access token (session)",

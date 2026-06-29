@@ -297,7 +297,7 @@ export function AddRemoteDialog({
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className={step === "pick" ? "max-w-3xl" : "max-w-lg"}>
         {step === "pick" ? (
           <>
             <DialogHeader>
@@ -307,9 +307,9 @@ export function AddRemoteDialog({
                 like.
               </DialogDescription>
             </DialogHeader>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {isLoading || !catalog
-                ? Array.from({ length: 6 }).map((_, i) => (
+                ? Array.from({ length: 9 }).map((_, i) => (
                     <Skeleton key={i} className="h-16 w-full rounded-lg" />
                   ))
                 : catalog.map((info) => {
