@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import cookie from "@fastify/cookie";
@@ -13,7 +14,7 @@ import type { Logger } from "../logger.js";
 import type { Orchestrator } from "../orchestrator.js";
 import { authUrl, exchangeCodeForRclone } from "../google/oauth.js";
 
-const REMOTE_TYPES = ["local", "s3", "b2", "drive", "dropbox", "onedrive", "webdav", "sftp"] as const;
+const REMOTE_TYPES = ["local", "s3", "b2", "drive", "dropbox", "onedrive", "webdav", "smb", "sftp"] as const;
 
 const SettingsSchema = z.object({
   concurrency: z.number().int().min(1).max(32),
@@ -147,6 +148,16 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
       return await orch.remotes.browse(id, q.path ?? "");
     } catch (e) {
       return reply.code(400).send({ error: "browse_failed", message: String((e as Error).message ?? e) });
+    }
+  });
+
+  // ----- local filesystem browser (for the Local remote folder picker) ---
+  app.get("/api/fs", async (req, reply) => {
+    const q = req.query as { path?: string };
+    try {
+      return await browseLocalFs(q.path);
+    } catch (e) {
+      return reply.code(400).send({ error: "fs_browse_failed", message: String((e as Error).message ?? e) });
     }
   });
 
@@ -294,6 +305,26 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
   }
 
   return app;
+}
+
+async function browseLocalFs(input?: string): Promise<import("@drivehub/types").FsListing> {
+  const target = input && input.length ? path.resolve(input) : "/";
+  const dirents = await readdir(target, { withFileTypes: true });
+  const entries = dirents
+    .filter((d) => !d.name.startsWith(".") || d.isDirectory())
+    .map((d) => ({
+      name: d.name,
+      path: path.join(target, d.name),
+      isDir: d.isDirectory(),
+      sizeBytes: null as number | null,
+    }))
+    .sort((a, b) => {
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    })
+    .slice(0, 2000);
+  const parent = target === path.parse(target).root ? null : path.dirname(target);
+  return { path: target, parent, entries };
 }
 
 function resolveWebDist(): string | null {

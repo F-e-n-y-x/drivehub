@@ -61,6 +61,19 @@ export const REMOTE_CATALOG: RemoteTypeInfo[] = [
     ],
   },
   {
+    type: "smb",
+    label: "SMB / CIFS (NAS, Windows share)",
+    oauth: false,
+    description: "Connect directly to a NAS or Windows file share over SMB.",
+    fields: [
+      { key: "host", label: "Host", type: "text", required: true, placeholder: "192.168.1.10" },
+      { key: "user", label: "Username", type: "text", required: false, placeholder: "guest" },
+      { key: "pass", label: "Password", type: "password", required: false },
+      { key: "domain", label: "Domain / Workgroup", type: "text", required: false, placeholder: "WORKGROUP" },
+      { key: "port", label: "Port", type: "number", required: false, placeholder: "445" },
+    ],
+  },
+  {
     type: "sftp",
     label: "SFTP / SSH",
     oauth: false,

@@ -19,6 +19,7 @@ export type RemoteType =
   | "dropbox"
   | "onedrive"
   | "webdav"
+  | "smb"
   | "sftp";
 
 export type RemoteStatus = "ok" | "error" | "unconfigured";
@@ -174,6 +175,23 @@ export interface RemoteListing {
   path: string;
   breadcrumbs: Array<{ name: string; path: string }>;
   entries: RemoteEntry[];
+}
+
+// ---------------------------------------------------------------------------
+// Local filesystem browser (for picking a folder when adding a Local remote)
+// ---------------------------------------------------------------------------
+
+export interface FsEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+  sizeBytes: number | null;
+}
+
+export interface FsListing {
+  path: string;
+  parent: string | null;
+  entries: FsEntry[];
 }
 
 // ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@ import type {
   ActivityEvent,
   AppSettings,
   EngineStatus,
+  FsListing,
   JobInput,
   JobPublic,
   JobRun,
@@ -106,6 +107,12 @@ export const api = {
       `/api/remotes/${encodeURIComponent(id)}/browse?path=${encodeURIComponent(path)}`,
     ),
 
+  // Local filesystem browser (for the Local remote directory picker)
+  browseFs: (path?: string) =>
+    request<FsListing>(
+      `/api/fs${path ? `?path=${encodeURIComponent(path)}` : ""}`,
+    ),
+
   // Jobs
   jobs: () => request<JobPublic[]>("/api/jobs"),
   createJob: (body: JobInput) =>
@@ -160,6 +167,7 @@ export const qk = {
   jobRuns: (jobId: string) => ["job-runs", jobId] as const,
   browse: (remoteId: string, path: string) =>
     ["browse", remoteId, path] as const,
+  fs: (path: string) => ["fs", path] as const,
   activity: (search: string) => ["activity", search] as const,
   updates: ["updates"] as const,
   system: ["system"] as const,

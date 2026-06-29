@@ -1,6 +1,7 @@
 import {
   Cloud,
   HardDrive,
+  HardDriveDownload,
   Box,
   Server,
   FolderSync,
@@ -16,6 +17,7 @@ const ICONS: Record<RemoteType, LucideIcon> = {
   dropbox: Box,
   onedrive: Cloud,
   webdav: Server,
+  smb: HardDriveDownload,
   sftp: Server,
 };
 
@@ -31,6 +33,7 @@ const TYPE_LABELS: Record<RemoteType, string> = {
   dropbox: "Dropbox",
   onedrive: "OneDrive",
   webdav: "WebDAV",
+  smb: "SMB / NAS",
   sftp: "SFTP",
 };
 

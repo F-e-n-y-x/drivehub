@@ -58,6 +58,15 @@ export function useBrowse(remoteId: string | null, path: string) {
   });
 }
 
+export function useFsBrowse(path: string) {
+  return useQuery({
+    queryKey: qk.fs(path),
+    queryFn: () => api.browseFs(path || undefined),
+    // Filesystem listings are cheap to refetch and rarely change mid-session.
+    staleTime: 10_000,
+  });
+}
+
 export function useActivity(search: string) {
   return useQuery({
     queryKey: qk.activity(search),

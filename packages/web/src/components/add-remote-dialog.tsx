@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Field } from "@/components/field";
 import { RemoteTypeFields } from "@/components/remote-type-fields";
+import { FolderPicker } from "@/components/folder-picker";
 import { remoteIcon } from "@/lib/remotes";
 import { useRemoteCatalog, useRemoteMutations, useRemotes } from "@/hooks/queries";
 import { toast } from "@/components/ui/toast";
@@ -63,6 +64,10 @@ export function AddRemoteDialog({
   // the *new* one that the OAuth flow creates.
   const knownIdsRef = useRef<Set<string>>(new Set());
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Guards the detection effect so the "new remote" -> connected transition
+  // (and the close timer it schedules) can fire exactly once.
+  const connectedRef = useRef(false);
 
   const clearConnectTimeout = () => {
     if (timeoutRef.current) {
@@ -71,8 +76,18 @@ export function AddRemoteDialog({
     }
   };
 
+  const clearCloseTimeout = () => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+  };
+
   const reset = () => {
     clearConnectTimeout();
+    clearCloseTimeout();
+    connectedRef.current = false;
+    knownIdsRef.current = new Set();
     setStep("pick");
     setSelected(null);
     setLabel("");
@@ -105,6 +120,7 @@ export function AddRemoteDialog({
   }, [selected, params]);
 
   const isGoogle = selected?.type === "drive";
+  const isLocal = selected?.type === "local";
   const isOtherOAuth =
     selected?.oauth && (selected.type === "dropbox" || selected.type === "onedrive");
   // Drive uses redirect by default, but can paste a token in "advanced" mode.
@@ -113,23 +129,41 @@ export function AddRemoteDialog({
   const isTokenPaste = isOtherOAuth || (isGoogle && driveTokenMode);
 
   // Detect a freshly-connected OAuth remote: while we're waiting on the Google
-  // tab, watch the remotes list for an id we hadn't seen at click time.
+  // tab, watch the remotes list for an id we hadn't seen at click time. This
+  // must fire its success/close exactly once — guard with a ref so re-renders
+  // (e.g. further `remotes` updates) can't re-trigger it or clear the close
+  // timer. The close timer lives in a ref, NOT in this effect's cleanup, so it
+  // can't be cancelled by a re-render.
   useEffect(() => {
-    if (connectPhase !== "connecting" || !remotes) return;
+    if (connectPhase !== "connecting" || connectedRef.current || !remotes) {
+      return;
+    }
     const fresh = remotes.find((r) => !knownIdsRef.current.has(r.id));
     if (!fresh) return;
+    connectedRef.current = true;
     clearConnectTimeout();
     setConnectPhase("connected");
     toast.success("Google Drive connected", { description: fresh.label });
-    const t = setTimeout(() => close(false), 1200);
-    return () => clearTimeout(t);
+    clearCloseTimeout();
+    closeTimeoutRef.current = setTimeout(() => {
+      closeTimeoutRef.current = null;
+      close(false);
+    }, 1000);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectPhase, remotes]);
 
-  // Clean up any pending timeout if the dialog unmounts.
-  useEffect(() => () => clearConnectTimeout(), []);
+  // Clean up any pending timers if the dialog unmounts.
+  useEffect(
+    () => () => {
+      clearConnectTimeout();
+      clearCloseTimeout();
+    },
+    [],
+  );
 
   const startRedirectConnect = (info: RemoteTypeInfo) => {
+    connectedRef.current = false;
+    clearCloseTimeout();
     knownIdsRef.current = new Set((remotes ?? []).map((r) => r.id));
     setConnectHint(null);
     setConnectPhase("connecting");
@@ -153,6 +187,8 @@ export function AddRemoteDialog({
 
   const cancelConnect = () => {
     clearConnectTimeout();
+    clearCloseTimeout();
+    connectedRef.current = false;
     setConnectPhase("idle");
     setConnectHint(null);
   };
@@ -350,6 +386,15 @@ export function AddRemoteDialog({
                       onChange={(e) => setToken(e.target.value)}
                       placeholder='{"access_token":"...","token_type":"bearer",...}'
                       className="min-h-[96px]"
+                    />
+                  </Field>
+                ) : isLocal ? (
+                  <Field label="Folder" required>
+                    <FolderPicker
+                      value={params.path ?? ""}
+                      onChange={(path) =>
+                        setParams((prev) => ({ ...prev, path }))
+                      }
                     />
                   </Field>
                 ) : (
