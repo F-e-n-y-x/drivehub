@@ -70,6 +70,7 @@ export class Orchestrator {
       logger,
     );
     this.terabox = new TeraBoxClient(logger);
+    this.remotes.setTeraboxClient(this.terabox);
   }
 
   async start(): Promise<void> {

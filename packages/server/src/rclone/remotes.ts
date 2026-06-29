@@ -12,6 +12,7 @@ import type { AppConfig } from "../config.js";
 import { decryptSecret, encryptSecret } from "../crypto.js";
 import { Repo, toRemotePublic } from "../db/repo.js";
 import type { Logger } from "../logger.js";
+import type { TeraBoxClient } from "../terabox/client.js";
 import type { RcloneService } from "./rclone.js";
 
 /**
@@ -245,12 +246,19 @@ function sanitizeName(label: string, existing: Set<string>): string {
 }
 
 export class RemoteService {
+  /** Set by the orchestrator — used to download TeraBox (rclone can't). */
+  private terabox: TeraBoxClient | null = null;
+
   constructor(
     private readonly config: AppConfig,
     private readonly repo: Repo,
     private readonly rclone: RcloneService,
     private readonly logger: Logger,
   ) {}
+
+  setTeraboxClient(client: TeraBoxClient): void {
+    this.terabox = client;
+  }
 
   catalog(): RemoteTypeInfo[] {
     return REMOTE_CATALOG;
@@ -554,7 +562,8 @@ export class RemoteService {
     await mkdir(tmpDir, { recursive: true });
     const upPath = path.join(tmpDir, `speedtest-up-${nanoid(6)}.bin`);
     const downPath = path.join(tmpDir, `speedtest-down-${nanoid(6)}.bin`);
-    const remoteTarget = this.target(remoteId, `.drivehub-speedtest-${nanoid(6)}.bin`);
+    const testName = `.drivehub-speedtest-${nanoid(6)}.bin`;
+    const remoteTarget = this.target(remoteId, testName);
 
     const perfArgs = [
       "--drive-chunk-size", "64M",
@@ -577,11 +586,34 @@ export class RemoteService {
       }
       uploadBytesPerSec = upMs > 0 ? Math.round(sizeBytes / (upMs / 1000)) : null;
 
-      const t2 = Date.now();
-      const down = await this.rclone.copyto(remoteTarget, downPath, perfArgs);
-      const downMs = Date.now() - t2;
-      if (down.code === 0) {
-        downloadBytesPerSec = downMs > 0 ? Math.round(sizeBytes / (downMs / 1000)) : null;
+      if (row.type === "terabox" && this.terabox) {
+        // rclone can't download TeraBox — measure via the direct API instead.
+        // The just-uploaded file may take a moment to be indexed, so retry.
+        const cookie = this.getParam(remoteId, "cookie");
+        if (cookie) {
+          for (let i = 0; i < 4 && downloadBytesPerSec === null; i++) {
+            try {
+              const t2 = Date.now();
+              const { url, headers } = await this.terabox.resolveDownload(cookie, testName);
+              const res = await fetch(url, { headers });
+              const bytes = (await res.arrayBuffer()).byteLength;
+              const downMs = Date.now() - t2;
+              if (res.ok && bytes > 0) {
+                downloadBytesPerSec = downMs > 0 ? Math.round(bytes / (downMs / 1000)) : null;
+              }
+            } catch (e) {
+              this.logger.debug({ err: String(e), attempt: i }, "terabox speedtest download retry");
+              await new Promise((r) => setTimeout(r, 1500));
+            }
+          }
+        }
+      } else {
+        const t2 = Date.now();
+        const down = await this.rclone.copyto(remoteTarget, downPath, perfArgs);
+        const downMs = Date.now() - t2;
+        if (down.code === 0) {
+          downloadBytesPerSec = downMs > 0 ? Math.round(sizeBytes / (downMs / 1000)) : null;
+        }
       }
     } finally {
       await this.rclone.deleteFile(remoteTarget).catch(() => {});

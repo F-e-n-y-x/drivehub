@@ -213,9 +213,9 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
               size="icon-sm"
               aria-label="Delete remote"
               onClick={() => setConfirmOpen(true)}
-              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+              className="hover:bg-danger/10"
             >
-              <Trash2 className="size-3.5" />
+              <Trash2 className="size-3.5 text-danger" />
             </Button>
           </SimpleTooltip>
         </div>

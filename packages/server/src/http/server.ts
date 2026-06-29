@@ -355,7 +355,7 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
         await proxyFrom(url, dh);
         return;
       } catch (e) {
-        logger.debug({ err: String(e), id }, "terabox dlink failed; using rclone cat");
+        logger.warn({ err: String(e), id, path: q.path }, "terabox direct download failed; falling back to rclone cat");
         // fall through to the cat path (response not yet hijacked)
       }
     } else if (row.type !== "local") {
