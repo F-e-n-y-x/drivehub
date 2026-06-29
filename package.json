@@ -1,8 +1,8 @@
 {
   "name": "drivehub",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Self-hosted, Dockerized real-time two-way Google Drive sync with a premium web UI",
+  "description": "Self-hosted, Dockerized multi-backend backup & sync (rclone-powered) with a premium web UI",
   "license": "MIT",
   "packageManager": "pnpm@9.15.0",
   "engines": {
