@@ -330,6 +330,22 @@ function AlistCard() {
           </Row>
         )}
 
+        {!isLoading && alist?.running && alist.adminPassword && (
+          <div className="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs">
+            <span className="text-muted-foreground">Sign in to AList with </span>
+            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground">
+              {alist.adminUser}
+            </code>
+            <span className="text-muted-foreground"> / </span>
+            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground">
+              {alist.adminPassword}
+            </code>
+            <span className="text-muted-foreground">
+              {" "}— set <code className="font-mono">ALIST_ADMIN_PASSWORD</code> to choose your own.
+            </span>
+          </div>
+        )}
+
         {!isLoading && alist && !alist.enabled && (
           <p className="mt-3 rounded-lg bg-muted/50 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
             To enable: set{" "}

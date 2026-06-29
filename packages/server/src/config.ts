@@ -41,6 +41,8 @@ const EnvSchema = z.object({
     .transform((v) => v === "true"),
   ALIST_PORT: z.coerce.number().int().positive().default(5244),
   ALIST_BIN: z.string().optional(),
+  /** Optional: set the built-in AList admin password (else one is generated). */
+  ALIST_ADMIN_PASSWORD: z.string().optional(),
 
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace"])

@@ -40,8 +40,33 @@ export class AlistManager {
     return this.config.ENABLE_ALIST;
   }
 
-  status(): { enabled: boolean; running: boolean; port: number } {
-    return { enabled: this.enabled, running: this.running, port: this.config.ALIST_PORT };
+  status(): {
+    enabled: boolean;
+    running: boolean;
+    port: number;
+    adminUser: string;
+    adminPassword: string | null;
+  } {
+    return {
+      enabled: this.enabled,
+      running: this.running,
+      port: this.config.ALIST_PORT,
+      adminUser: "admin",
+      // Single-user, LAN self-hosted tool with no auth of its own, so it's fine
+      // to surface the built-in AList password the user needs to sign in.
+      adminPassword: this.enabled ? this.currentPassword() : null,
+    };
+  }
+
+  private currentPassword(): string | null {
+    if (this.config.ALIST_ADMIN_PASSWORD) return this.config.ALIST_ADMIN_PASSWORD;
+    const stored = this.repo.kvGet(PW_KEY);
+    if (!stored) return null;
+    try {
+      return decryptSecret(stored, this.config.TOKEN_ENCRYPTION_KEY);
+    } catch {
+      return null;
+    }
   }
 
   async start(): Promise<void> {
@@ -66,6 +91,11 @@ export class AlistManager {
   }
 
   private ensurePassword(): string {
+    // An explicit env password always wins (and is kept in sync on AList).
+    if (this.config.ALIST_ADMIN_PASSWORD) {
+      this.repo.kvSet(PW_KEY, encryptSecret(this.config.ALIST_ADMIN_PASSWORD, this.config.TOKEN_ENCRYPTION_KEY));
+      return this.config.ALIST_ADMIN_PASSWORD;
+    }
     const existing = this.repo.kvGet(PW_KEY);
     if (existing) {
       try {

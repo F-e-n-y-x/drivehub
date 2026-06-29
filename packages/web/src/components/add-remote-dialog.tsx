@@ -653,6 +653,23 @@ function TeraBoxPanel({
                 remote here.
               </p>
             </div>
+            {alist?.adminPassword && (
+              <div className="rounded-lg border border-border bg-muted/40 p-3 text-[13px]">
+                <p className="mb-1.5 font-medium text-foreground">Sign in to AList with</p>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">User</span>
+                  <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
+                    {alist.adminUser}
+                  </code>
+                </div>
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Password</span>
+                  <code className="max-w-[60%] truncate rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
+                    {alist.adminPassword}
+                  </code>
+                </div>
+              </div>
+            )}
             <Button
               variant="accent"
               className="w-full"

@@ -16,6 +16,9 @@ services:
       # Then open http://<host>:5244 to add storages; DriveHub auto-creates an
       # "AList (built-in)" remote that exposes them.
       ENABLE_ALIST: ${ENABLE_ALIST:-false}
+      # Optional: choose the built-in AList admin password (else one is
+      # generated and shown in DriveHub → Settings / the TeraBox panel).
+      ALIST_ADMIN_PASSWORD: ${ALIST_ADMIN_PASSWORD:-}
       # --- Required ---
       # Encrypts stored remote credentials/tokens. Generate: openssl rand -base64 32
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY}

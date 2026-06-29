@@ -306,6 +306,9 @@ export interface AlistStatus {
   enabled: boolean;
   running: boolean;
   port: number;
+  /** Credentials to sign in to the built-in AList admin UI. */
+  adminUser: string;
+  adminPassword: string | null;
 }
 
 export interface SystemInfo {
