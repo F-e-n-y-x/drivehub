@@ -105,11 +105,12 @@ function CopyableCommand({ command }: { command: string }) {
 
 function RcloneRow({ data }: { data: UpdateStatus }) {
   const { updateRclone } = useUpdateActions();
+  const r = data.rclone;
   return (
     <Card>
       <CardContent className="space-y-3 p-4">
-        <VersionRow component={data.rclone}>
-          {data.rclone.updateAvailable && (
+        <VersionRow component={r}>
+          {r.updateAvailable && r.canSelfUpdate && (
             <Button
               type="button"
               variant="accent"
@@ -124,6 +125,19 @@ function RcloneRow({ data }: { data: UpdateStatus }) {
               )}
               Update rclone now
             </Button>
+          )}
+          {r.updateAvailable && !r.canSelfUpdate && (
+            <div className="space-y-2.5 rounded-lg bg-muted/40 p-3">
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                rclone is the bundled <span className="font-medium text-foreground">rclone-extra</span>{" "}
+                fork (native TeraBox &amp; more) — it updates with the DriveHub
+                image. Redeploy to get the newer version:
+              </p>
+              <CopyableCommand command="docker compose pull && docker compose up -d" />
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                In Portainer: Update the stack → tick "Re-pull image".
+              </p>
+            </div>
           )}
         </VersionRow>
       </CardContent>

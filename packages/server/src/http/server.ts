@@ -313,11 +313,17 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     };
 
     const m = rangeHeader ? /bytes=(\d*)-(\d*)/.exec(rangeHeader) : null;
-    if (m && total != null) {
-      let start = m[1] ? parseInt(m[1], 10) : 0;
-      let end = m[2] ? parseInt(m[2], 10) : total - 1;
-      if (Number.isNaN(start) || start < 0) start = 0;
-      if (Number.isNaN(end) || end >= total) end = total - 1;
+    let start = m && m[1] ? parseInt(m[1], 10) : 0;
+    let end = m && m[2] ? parseInt(m[2], 10) : total != null ? total - 1 : -1;
+    if (Number.isNaN(start) || start < 0) start = 0;
+    if (total != null && (Number.isNaN(end) || end >= total)) end = total - 1;
+
+    // Only do a PARTIAL (206) read for a genuine sub-range — and only when the
+    // size is known. A full-file request (the common case, e.g. "bytes=0-") is
+    // streamed plainly with 200: `rclone cat --offset/--count` is unreliable on
+    // some backends (e.g. TeraBox) and a mismatched 206 makes players give up.
+    const isPartial = m != null && total != null && (start > 0 || end < total - 1);
+    if (isPartial) {
       if (start > end) {
         reply.raw.writeHead(416, { "Content-Range": `bytes */${total}` });
         reply.raw.end();

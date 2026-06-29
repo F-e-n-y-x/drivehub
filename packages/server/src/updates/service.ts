@@ -2,10 +2,13 @@ import type { ComponentUpdate, UpdateStatus } from "@drivehub/types";
 import type { Logger } from "../logger.js";
 import type { RcloneService } from "../rclone/rclone.js";
 
-const RCLONE_VERSION_URL = "https://downloads.rclone.org/version.txt";
 const REPO = "F-e-n-y-x/drivehub";
 const GITHUB_RELEASE_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 const GITHUB_BRANCH_URL = `https://api.github.com/repos/${REPO}/commits/main`;
+// We bundle the rclone-extra fork (native terabox etc.), so check ITS releases
+// — NOT official rclone. `rclone selfupdate` would install stock rclone and
+// drop the extra backends, so rclone updates come with the DriveHub image.
+const RCLONE_EXTRA_RELEASE_URL = "https://api.github.com/repos/gulp79/rclone-extra/releases/latest";
 const CACHE_MS = 60 * 60 * 1000; // 1h
 
 /**
@@ -32,20 +35,23 @@ export class UpdateService {
     if (!force && this.cache && Date.now() - this.cache.checkedAt < CACHE_MS) {
       return this.cache;
     }
-    const [rcloneCurrentRaw, rcloneLatest, releaseTag, branchSha] = await Promise.all([
+    const [rcloneCurrentRaw, rcloneExtraTag, releaseTag, branchSha] = await Promise.all([
       this.rclone.version(),
-      fetchText(RCLONE_VERSION_URL),
+      fetchGithubTag(RCLONE_EXTRA_RELEASE_URL),
       fetchGithubLatestRelease(),
       fetchDefaultBranchSha(),
     ]);
 
+    // We bundle rclone-extra; compare its base version to the fork's latest
+    // release. canSelfUpdate is false because `rclone selfupdate` installs
+    // STOCK rclone (dropping terabox etc.) — it updates with the image instead.
     const rcloneCurrent = normalize(rcloneCurrentRaw);
     const rclone: ComponentUpdate = {
       name: "rclone",
-      current: rcloneCurrent,
-      latest: normalize(rcloneLatest),
-      updateAvailable: isNewer(normalize(rcloneLatest), rcloneCurrent),
-      canSelfUpdate: true,
+      current: rcloneCurrent ? `${rcloneCurrent} (extra)` : rcloneCurrent,
+      latest: rcloneExtraTag ?? normalize(rcloneExtraTag),
+      updateAvailable: isNewer(normalize(rcloneExtraTag), rcloneCurrent),
+      canSelfUpdate: false,
     };
 
     const app = this.buildAppUpdate(releaseTag, branchSha);
@@ -87,11 +93,21 @@ export class UpdateService {
   }
 
   async updateRclone(): Promise<{ ok: boolean; message: string }> {
-    this.logger.info("running rclone selfupdate");
-    const result = await this.rclone.selfUpdate();
+    // Intentionally do NOT run `rclone selfupdate` — it would replace the
+    // bundled rclone-extra with stock rclone and drop terabox/teldrive/etc.
+    // The bundled rclone-extra updates when the DriveHub image is redeployed.
     this.cache = null;
-    return result;
+    return {
+      ok: false,
+      message:
+        "rclone-extra is bundled with the image — redeploy DriveHub to update it. (Self-update is disabled because it would install stock rclone and drop TeraBox & other extra backends.)",
+    };
   }
+}
+
+async function fetchGithubTag(url: string): Promise<string | null> {
+  const json = await fetchGithubJson<{ tag_name?: string }>(url);
+  return json?.tag_name ?? null;
 }
 
 async function fetchText(url: string): Promise<string | null> {
