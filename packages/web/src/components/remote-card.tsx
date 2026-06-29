@@ -1,14 +1,34 @@
 import { useState } from "react";
-import { Loader2, Mail, Plug, Trash2 } from "lucide-react";
-import type { RemotePublic } from "@drivehub/types";
+import { useNavigate } from "react-router-dom";
+import {
+  ArrowDown,
+  ArrowUp,
+  FolderOpen,
+  Gauge,
+  Loader2,
+  Mail,
+  Pencil,
+  Plug,
+  Trash2,
+} from "lucide-react";
+import type { RemotePublic, SpeedTestResult } from "@drivehub/types";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { SimpleTooltip } from "@/components/ui/tooltip";
 import { StatusDot } from "@/components/status-dot";
 import { RemoteIcon } from "@/components/brand-icon";
 import { remoteTypeLabel } from "@/lib/remotes";
 import { remoteStatusMeta } from "@/lib/status";
-import { useRemoteMutations } from "@/hooks/queries";
+import {
+  useRemoteAbout,
+  useRemoteMutations,
+  useRenameRemote,
+  useSpeedTest,
+} from "@/hooks/queries";
+import { NamePromptDialog } from "@/components/name-prompt-dialog";
+import { cn, formatBytes, formatRelativeTime, formatSpeed } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -34,17 +54,29 @@ const SUMMARY_FIELDS: Array<{ key: string; label: string }> = [
 ];
 
 export function RemoteCard({ remote }: { remote: RemotePublic }) {
+  const navigate = useNavigate();
   const status = remoteStatusMeta(remote.status);
   const { test, remove } = useRemoteMutations();
+  const rename = useRenameRemote();
+  const speedTest = useSpeedTest();
+  const about = useRemoteAbout(remote.id);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [speed, setSpeed] = useState<SpeedTestResult | null>(null);
 
   const email = remote.summary.email;
-  const details = SUMMARY_FIELDS.filter(
+  // Detail grid: Type is always shown; whitelist the rest, capped so the card
+  // stays compact (Type already takes one slot of the 2-col grid).
+  const summaryDetails = SUMMARY_FIELDS.filter(
     (f) => (remote.summary[f.key] ?? "").trim().length > 0,
-  ).slice(0, 4);
+  ).slice(0, 3);
+
+  const runSpeedTest = () =>
+    speedTest.mutate(remote.id, { onSuccess: (res) => setSpeed(res) });
 
   return (
     <Card className="flex flex-col gap-4 p-5">
+      {/* Header */}
       <div className="flex items-start gap-3">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-muted/40">
           <RemoteIcon type={remote.type} className="size-5" />
@@ -59,7 +91,7 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
               <span className="truncate">{email}</span>
             </p>
           ) : (
-            <p className="text-xs text-muted-foreground">
+            <p className="mt-0.5 text-xs text-muted-foreground">
               {remoteTypeLabel(remote.type)}
             </p>
           )}
@@ -70,37 +102,97 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
         </Badge>
       </div>
 
-      {details.length > 0 && (
-        <dl className="space-y-1 rounded-lg bg-muted/40 px-3 py-2 text-xs">
-          {details.map((f) => (
-            <div key={f.key} className="flex items-center justify-between gap-3">
-              <dt className="text-muted-foreground">{f.label}</dt>
-              <dd
-                className="truncate font-mono text-[11px] text-foreground"
-                title={remote.summary[f.key]}
-              >
-                {remote.summary[f.key]}
-              </dd>
-            </div>
-          ))}
-        </dl>
+      {/* Details grid */}
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 rounded-lg bg-muted/40 px-3 py-2.5 text-xs">
+        <Detail label="Type" value={remoteTypeLabel(remote.type)} />
+        <Detail
+          label="Added"
+          value={formatRelativeTime(remote.createdAt)}
+          title={new Date(remote.createdAt).toLocaleString()}
+        />
+        {summaryDetails.map((f) => (
+          <Detail
+            key={f.key}
+            label={f.label}
+            value={remote.summary[f.key] ?? ""}
+            mono
+          />
+        ))}
+      </dl>
+
+      {/* Storage usage */}
+      <StorageUsage
+        loading={about.isLoading}
+        about={about.data}
+        error={about.isError}
+      />
+
+      {/* Speed test result (persists last run) */}
+      {speed && (
+        <div className="flex items-center gap-4 rounded-lg border border-border/60 px-3 py-2 text-xs">
+          <span className="font-medium text-muted-foreground">Throughput</span>
+          <span className="flex items-center gap-1 tabular-nums text-foreground">
+            <ArrowUp className="size-3.5 text-synced" />
+            {formatSpeed(speed.uploadBytesPerSec)}
+          </span>
+          <span className="flex items-center gap-1 tabular-nums text-foreground">
+            <ArrowDown className="size-3.5 text-accent" />
+            {formatSpeed(speed.downloadBytesPerSec)}
+          </span>
+        </div>
       )}
 
+      {/* Actions */}
       <div className="mt-auto flex items-center gap-2">
         <Button
-          variant="outline"
+          variant="accent"
           size="sm"
           className="flex-1"
-          disabled={test.isPending}
-          onClick={() => test.mutate(remote.id)}
+          onClick={() => navigate(`/browser?remote=${encodeURIComponent(remote.id)}`)}
         >
-          {test.isPending ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <Plug className="size-3.5" />
-          )}
-          Test
+          <FolderOpen className="size-3.5" />
+          Browse
         </Button>
+        <SimpleTooltip label="Uploads & downloads a 16 MB test file">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={speedTest.isPending}
+            onClick={runSpeedTest}
+          >
+            {speedTest.isPending ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Gauge className="size-3.5" />
+            )}
+            {speedTest.isPending ? "Testing…" : "Speed test"}
+          </Button>
+        </SimpleTooltip>
+        <SimpleTooltip label="Test connection">
+          <Button
+            variant="outline"
+            size="icon-sm"
+            aria-label="Test connection"
+            disabled={test.isPending}
+            onClick={() => test.mutate(remote.id)}
+          >
+            {test.isPending ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Plug className="size-3.5" />
+            )}
+          </Button>
+        </SimpleTooltip>
+        <SimpleTooltip label="Rename remote">
+          <Button
+            variant="outline"
+            size="icon-sm"
+            aria-label="Rename remote"
+            onClick={() => setRenameOpen(true)}
+          >
+            <Pencil className="size-3.5" />
+          </Button>
+        </SimpleTooltip>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -110,6 +202,24 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
           <Trash2 className="size-4 text-muted-foreground" />
         </Button>
       </div>
+
+      <NamePromptDialog
+        open={renameOpen}
+        onOpenChange={setRenameOpen}
+        title="Rename remote"
+        description={`Change the display name for "${remote.label}".`}
+        label="Name"
+        placeholder="My Drive"
+        initialValue={remote.label}
+        confirmLabel="Save"
+        pending={rename.isPending}
+        onConfirm={(label) =>
+          rename.mutate(
+            { id: remote.id, label },
+            { onSuccess: () => setRenameOpen(false) },
+          )
+        }
+      />
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>
@@ -142,5 +252,109 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
         </DialogContent>
       </Dialog>
     </Card>
+  );
+}
+
+/** A single label/value row inside the compact details grid. */
+function Detail({
+  label,
+  value,
+  mono,
+  title,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  title?: string;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+        {label}
+      </dt>
+      <dd
+        className={cn(
+          "truncate text-foreground",
+          mono ? "font-mono text-[11px]" : "text-xs",
+        )}
+        title={title ?? value}
+      >
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * Slim storage quota bar. Renders "used / total" with a percentage fill that
+ * shifts to amber past 75% and rose past 90%. When the backend can't report
+ * usage (nulls — common for some providers), we show a muted notice instead of
+ * an error, since usage is informational, not load-bearing.
+ */
+function StorageUsage({
+  loading,
+  about,
+  error,
+}: {
+  loading: boolean;
+  about: { total: number | null; used: number | null; free: number | null } | undefined;
+  error: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="space-y-1.5">
+        <Skeleton className="h-3 w-32 rounded" />
+        <Skeleton className="h-1.5 w-full rounded-full" />
+      </div>
+    );
+  }
+
+  const total = about?.total ?? null;
+  const used = about?.used ?? null;
+  const hasQuota =
+    !error && total !== null && total > 0 && used !== null && used >= 0;
+
+  if (!hasQuota) {
+    // We can still show "used" alone if that's all we got (e.g. local disk
+    // without a quota), otherwise mark it unavailable.
+    if (!error && used !== null && used >= 0) {
+      return (
+        <p className="text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">
+            {formatBytes(used)}
+          </span>{" "}
+          used
+        </p>
+      );
+    }
+    return (
+      <p className="text-xs text-muted-foreground">Usage unavailable</p>
+    );
+  }
+
+  const pct = Math.min(100, Math.max(0, (used / total) * 100));
+  const fill =
+    pct > 90 ? "bg-conflict" : pct > 75 ? "bg-pending" : "bg-synced";
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-muted-foreground">
+          <span className="font-medium text-foreground">
+            {formatBytes(used)}
+          </span>{" "}
+          of {formatBytes(total)}
+        </span>
+        <span className="tabular-nums text-muted-foreground">
+          {pct.toFixed(0)}%
+        </span>
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+        <div
+          className={cn("h-full rounded-full transition-all", fill)}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
   );
 }

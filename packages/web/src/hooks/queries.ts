@@ -41,6 +41,20 @@ export function useRemotes() {
   return useQuery({ queryKey: qk.remotes, queryFn: api.remotes });
 }
 
+/**
+ * Storage usage (total/used/free) for one remote. Cheap-ish but provider-
+ * dependent, so we cache it for a minute. `enabled` lets cards mount before a
+ * remote id is known without firing a bad request.
+ */
+export function useRemoteAbout(id: string | null) {
+  return useQuery({
+    queryKey: qk.remoteAbout(id ?? ""),
+    queryFn: () => api.getRemoteAbout(id as string),
+    enabled: !!id,
+    staleTime: 60_000,
+  });
+}
+
 export function useJobs() {
   return useQuery({ queryKey: qk.jobs, queryFn: api.jobs });
 }
@@ -215,6 +229,38 @@ export function useRemoteMutations() {
   });
 
   return { create, createOAuth, remove, test, startIcloud, verifyIcloud };
+}
+
+/**
+ * Rename (relabel) a remote. Invalidates the remotes list so cards refresh, and
+ * toasts on success/error. Kept standalone so the remote card can use it
+ * without pulling in the full mutation bundle.
+ */
+export function useRenameRemote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, label }: { id: string; label: string }) =>
+      api.renameRemote(id, label),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: qk.remotes });
+      qc.invalidateQueries({ queryKey: qk.status });
+      toast.success("Remote renamed", { description: r.label });
+    },
+    onError: (e: Error) =>
+      toast.error("Couldn't rename remote", { description: e.message }),
+  });
+}
+
+/**
+ * On-demand speed test for a remote. Returns the mutation so the card can show
+ * a per-remote running state and keep the last result; errors are toasted.
+ */
+export function useSpeedTest() {
+  return useMutation({
+    mutationFn: (id: string) => api.speedTest(id),
+    onError: (e: Error) =>
+      toast.error("Speed test failed", { description: e.message }),
+  });
 }
 
 // --- Remote file-manager ops ----------------------------------------------

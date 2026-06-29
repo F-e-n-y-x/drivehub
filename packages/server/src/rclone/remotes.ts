@@ -1,3 +1,5 @@
+import { mkdir, rm, statfs, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { nanoid } from "nanoid";
 import type {
@@ -75,6 +77,14 @@ export const REMOTE_CATALOG: RemoteTypeInfo[] = [
     ],
   },
   {
+    type: "custom",
+    label: "Custom / other (advanced)",
+    oauth: false,
+    description:
+      "Configure any rclone backend not listed above — pCloud, Mega, Koofr, Storj, Box, Yandex, and (with a TeraBox-capable rclone build set via RCLONE_BIN) TeraBox. Enter the rclone backend name and its config keys.",
+    fields: [],
+  },
+  {
     type: "sftp",
     label: "SFTP / SSH",
     oauth: false,
@@ -137,11 +147,17 @@ const SECRET_KEYS = new Set([
   "client_secret",
 ]);
 
+/** Looks secret by name (covers arbitrary keys from custom backends). */
+function looksSecret(key: string): boolean {
+  return /pass|secret|token|key|credential|auth/i.test(key);
+}
+
 /** Build the non-secret summary shown in the UI. */
 function buildSummary(type: RemoteType, params: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(params)) {
-    if (SECRET_KEYS.has(k)) continue;
+    if (k.startsWith("__")) continue;
+    if (SECRET_KEYS.has(k) || looksSecret(k)) continue;
     if (!v) continue;
     out[k] = v;
   }
@@ -182,7 +198,12 @@ export class RemoteService {
       if (row.type === "local") continue; // local needs no rclone remote
       try {
         const params = this.decryptParams(row.configEnc);
-        await this.rclone.configCreate(row.name, rcloneBackend(row.type as RemoteType), params);
+        if (row.type === "custom") {
+          const { __backend, ...rest } = params;
+          if (__backend) await this.rclone.configCreate(row.name, __backend, rest);
+        } else {
+          await this.rclone.configCreate(row.name, rcloneBackend(row.type as RemoteType), params);
+        }
       } catch (e) {
         this.logger.error({ err: String(e), remote: row.name }, "failed to rebuild rclone remote");
       }
@@ -203,15 +224,25 @@ export class RemoteService {
     const name = sanitizeName(input.label, existing);
     const params = pruneEmpty(input.params);
 
-    if (input.type !== "local") {
-      await this.rclone.configCreate(name, rcloneBackend(input.type), params);
+    let summary: Record<string, string>;
+    if (input.type === "custom") {
+      const backend = params.__backend;
+      if (!backend) throw new Error("Custom remote requires an rclone backend type.");
+      const { __backend, ...rest } = params;
+      await this.rclone.configCreate(name, backend, rest);
+      summary = { backend, ...buildSummary("custom", rest) };
+    } else {
+      if (input.type !== "local") {
+        await this.rclone.configCreate(name, rcloneBackend(input.type), params);
+      }
+      summary = buildSummary(input.type, params);
     }
     const row = this.repo.insertRemote({
       name,
       type: input.type,
       label: input.label,
       configEnc: encryptSecret(JSON.stringify(params), this.config.TOKEN_ENCRYPTION_KEY),
-      summary: buildSummary(input.type, params),
+      summary,
       status: "ok",
     });
     return toRemotePublic(row);
@@ -360,6 +391,61 @@ export class RemoteService {
   private localPath(configEnc: string): string {
     const params = this.decryptParams(configEnc);
     return params.path ?? "/data/sync";
+  }
+
+  /** Storage usage for a remote (local uses statfs; others use rclone about). */
+  async about(remoteId: string): Promise<{ total: number | null; used: number | null; free: number | null }> {
+    const row = this.repo.getRemote(remoteId);
+    if (!row) throw new Error("Unknown remote");
+    if (row.type === "local") {
+      try {
+        const s = await statfs(this.localPath(row.configEnc));
+        const total = Number(s.blocks) * s.bsize;
+        const free = Number(s.bavail) * s.bsize;
+        return { total, free, used: total - free };
+      } catch {
+        return { total: null, used: null, free: null };
+      }
+    }
+    const a = await this.rclone.about(row.name);
+    return { total: a.total, used: a.used, free: a.free };
+  }
+
+  /** On-demand round-trip speed test: upload then download a temp blob. */
+  async speedTest(
+    remoteId: string,
+    sizeBytes = 16 * 1024 * 1024,
+  ): Promise<{ sizeBytes: number; uploadBytesPerSec: number | null; downloadBytesPerSec: number | null }> {
+    const row = this.repo.getRemote(remoteId);
+    if (!row) throw new Error("Unknown remote");
+    const tmpDir = path.join(this.config.DATA_DIR, "tmp");
+    await mkdir(tmpDir, { recursive: true });
+    const upPath = path.join(tmpDir, `speedtest-up-${nanoid(6)}.bin`);
+    const downPath = path.join(tmpDir, `speedtest-down-${nanoid(6)}.bin`);
+    const remoteTarget = this.target(remoteId, `.drivehub-speedtest-${nanoid(6)}.bin`);
+
+    let uploadBytesPerSec: number | null = null;
+    let downloadBytesPerSec: number | null = null;
+    try {
+      await writeFile(upPath, randomBytes(sizeBytes));
+      const t1 = Date.now();
+      const up = await this.rclone.copyto(upPath, remoteTarget);
+      const upMs = Date.now() - t1;
+      if (up.code !== 0) throw new Error(up.stderr.split("\n").filter(Boolean).pop() ?? "upload failed");
+      uploadBytesPerSec = upMs > 0 ? Math.round(sizeBytes / (upMs / 1000)) : null;
+
+      const t2 = Date.now();
+      const down = await this.rclone.copyto(remoteTarget, downPath);
+      const downMs = Date.now() - t2;
+      if (down.code === 0) {
+        downloadBytesPerSec = downMs > 0 ? Math.round(sizeBytes / (downMs / 1000)) : null;
+      }
+    } finally {
+      await this.rclone.deleteFile(remoteTarget).catch(() => {});
+      await rm(upPath, { force: true }).catch(() => {});
+      await rm(downPath, { force: true }).catch(() => {});
+    }
+    return { sizeBytes, uploadBytesPerSec, downloadBytesPerSec };
   }
 
   async browse(remoteId: string, subPath: string): Promise<RemoteListing> {

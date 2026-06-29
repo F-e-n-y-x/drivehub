@@ -76,6 +76,18 @@ Open **http://localhost:8080** → add storage → create a job. Done.
 **Handy:** `PUID`/`PGID` (set to `0` to back up root-owned data like system
 AppData). Full list in [`.env.example`](.env.example).
 
+## Other backends & TeraBox
+
+Beyond the built-in providers, the **Custom / other (advanced)** remote can
+configure *any* rclone backend (pCloud, Mega, Koofr, Storj, Box, Yandex…) —
+enter the rclone backend name plus its config keys.
+
+**TeraBox** has no official API and no native rclone backend, so it only works
+with a TeraBox-capable rclone build (e.g. an unofficial fork). To use it: mount
+such a binary into the container and point `RCLONE_BIN` at it, then add a
+**Custom** remote with backend `terabox`. DriveHub ships official rclone by
+default and does not bundle forks.
+
 ## Features
 
 - Many backends via rclone · real-time + scheduled + snapshot jobs

@@ -9,8 +9,10 @@ import type {
   LogEntry,
   LogLevel,
   OkResponse,
+  RemoteAbout,
   RemoteListing,
   RemotePublic,
+  SpeedTestResult,
   RemoteType,
   RemoteTypeInfo,
   SystemInfo,
@@ -139,6 +141,11 @@ export const api = {
       method: "POST",
       json: body,
     }),
+  renameRemote: (id: string, label: string) =>
+    request<RemotePublic>(`/api/remotes/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      json: { label },
+    }),
   testRemote: (id: string) =>
     request<{ ok: boolean; error?: string }>(
       `/api/remotes/${encodeURIComponent(id)}/test`,
@@ -151,6 +158,16 @@ export const api = {
   browse: (id: string, path: string) =>
     request<RemoteListing>(
       `/api/remotes/${encodeURIComponent(id)}/browse?path=${encodeURIComponent(path)}`,
+    ),
+  // Storage usage for a remote (total/used/free; any may be null if the
+  // backend can't report it for that provider).
+  getRemoteAbout: (id: string) =>
+    request<RemoteAbout>(`/api/remotes/${encodeURIComponent(id)}/about`),
+  // On-demand throughput test (uploads + downloads a ~16MB temp blob).
+  speedTest: (id: string) =>
+    request<SpeedTestResult>(
+      `/api/remotes/${encodeURIComponent(id)}/speedtest`,
+      { method: "POST" },
     ),
 
   // Remote file-manager ops
@@ -254,6 +271,7 @@ export const qk = {
   jobRuns: (jobId: string) => ["job-runs", jobId] as const,
   browse: (remoteId: string, path: string) =>
     ["browse", remoteId, path] as const,
+  remoteAbout: (remoteId: string) => ["remote-about", remoteId] as const,
   fs: (path: string) => ["fs", path] as const,
   activity: (search: string) => ["activity", search] as const,
   updates: ["updates"] as const,

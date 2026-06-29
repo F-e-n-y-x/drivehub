@@ -9,14 +9,14 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import type { AppSettings, RemoteType } from "@drivehub/types";
 import type { AppConfig } from "../config.js";
-import { toJobPublic, toJobRun } from "../db/repo.js";
+import { toJobPublic, toJobRun, toRemotePublic } from "../db/repo.js";
 import type { Logger } from "../logger.js";
 import type { Orchestrator } from "../orchestrator.js";
 import { authUrl, exchangeCodeForRclone } from "../google/oauth.js";
 import { getLogLevel, setLogLevel } from "../logger.js";
 import { logStore } from "../logs/store.js";
 
-const REMOTE_TYPES = ["local", "s3", "b2", "drive", "dropbox", "onedrive", "icloud", "webdav", "smb", "sftp"] as const;
+const REMOTE_TYPES = ["local", "s3", "b2", "drive", "dropbox", "onedrive", "icloud", "webdav", "smb", "sftp", "custom"] as const;
 
 const SettingsSchema = z.object({
   concurrency: z.number().int().min(1).max(32),
@@ -65,7 +65,9 @@ const STATE_COOKIE = "dh_oauth_state";
 const LABEL_COOKIE = "dh_oauth_label";
 
 export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logger) {
-  const app = Fastify({ loggerInstance: logger });
+  // disableRequestLogging: per-request "incoming/completed" lines flood the
+  // in-app log viewer (the UI polls several endpoints) and bury real events.
+  const app = Fastify({ loggerInstance: logger, disableRequestLogging: true });
   const repo = orch.repo;
   void app.register(cookie);
 
@@ -170,6 +172,20 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     }
   });
 
+  // Edit basic remote properties (currently just the display label).
+  app.patch("/api/remotes/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const b = (req.body ?? {}) as { label?: string };
+    const row = repo.getRemote(id);
+    if (!row) return reply.code(404).send({ error: "not_found", message: "remote" });
+    const label = (b.label ?? "").trim();
+    if (!label) return reply.code(400).send({ error: "bad_request", message: "label required" });
+    repo.updateRemote(id, { label });
+    const updated = toRemotePublic(repo.getRemote(id)!);
+    orch.bus.emit({ type: "remote", payload: updated });
+    return updated;
+  });
+
   app.post("/api/remotes/:id/test", async (req) => {
     const { id } = req.params as { id: string };
     return orch.remotes.test(id);
@@ -180,6 +196,24 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     await orch.remotes.delete(id);
     orch.onRemotesChanged();
     return { ok: true };
+  });
+
+  app.get("/api/remotes/:id/about", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    try {
+      return await orch.remotes.about(id);
+    } catch (e) {
+      return reply.code(400).send({ error: "about_failed", message: String((e as Error).message ?? e) });
+    }
+  });
+
+  app.post("/api/remotes/:id/speedtest", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    try {
+      return await orch.remotes.speedTest(id);
+    } catch (e) {
+      return reply.code(400).send({ error: "speedtest_failed", message: String((e as Error).message ?? e) });
+    }
   });
 
   app.get("/api/remotes/:id/browse", async (req, reply) => {

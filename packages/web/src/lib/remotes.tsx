@@ -19,6 +19,7 @@ const TYPE_LABELS: Record<RemoteType, string> = {
   webdav: "WebDAV",
   smb: "SMB / NAS",
   sftp: "SFTP",
+  custom: "Custom",
 };
 
 export function remoteTypeLabel(type: RemoteType): string {

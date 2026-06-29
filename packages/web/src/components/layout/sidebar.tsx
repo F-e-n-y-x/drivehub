@@ -1,5 +1,11 @@
 import { NavLink } from "react-router-dom";
-import { PanelLeftClose, PanelLeft, Github } from "lucide-react";
+import {
+  PanelLeftClose,
+  PanelLeft,
+  Github,
+  Terminal,
+  type LucideIcon,
+} from "lucide-react";
 import { navItems } from "./nav";
 import { UpdateWidget } from "./update-widget";
 import { useUIStore } from "@/store/ui";
@@ -23,9 +29,62 @@ function Logo({ collapsed }: { collapsed: boolean }) {
   );
 }
 
+/** A single sidebar nav link, with collapsed-state tooltip support. */
+function NavItemLink({
+  to,
+  label,
+  icon: Icon,
+  end,
+  collapsed,
+}: {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  end?: boolean;
+  collapsed: boolean;
+}) {
+  const link = (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        cn(
+          "group relative flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors",
+          collapsed && "justify-center px-0",
+          isActive
+            ? "bg-muted text-foreground"
+            : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+        )
+      }
+    >
+      {({ isActive }) => (
+        <>
+          <span
+            className={cn(
+              "absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-accent transition-opacity",
+              isActive ? "opacity-100" : "opacity-0",
+            )}
+          />
+          <Icon className="size-[18px] shrink-0" />
+          {!collapsed && <span className="flex-1">{label}</span>}
+        </>
+      )}
+    </NavLink>
+  );
+
+  return collapsed ? (
+    <SimpleTooltip label={label} side="right">
+      {link}
+    </SimpleTooltip>
+  ) : (
+    link
+  );
+}
+
 export function Sidebar() {
   const collapsed = useUIStore((s) => s.sidebarCollapsed);
   const toggle = useUIStore((s) => s.toggleSidebar);
+  const showLogs = useUIStore((s) => s.showLogs);
 
   return (
     <aside
@@ -37,45 +96,24 @@ export function Sidebar() {
       <Logo collapsed={collapsed} />
 
       <nav className="flex-1 space-y-0.5 px-2.5 py-2">
-        {navItems.map((item) => {
-          const link = (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === "/"}
-              className={({ isActive }) =>
-                cn(
-                  "group relative flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors",
-                  collapsed && "justify-center px-0",
-                  isActive
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                )
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <span
-                    className={cn(
-                      "absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-accent transition-opacity",
-                      isActive ? "opacity-100" : "opacity-0",
-                    )}
-                  />
-                  <item.icon className="size-[18px] shrink-0" />
-                  {!collapsed && <span className="flex-1">{item.label}</span>}
-                </>
-              )}
-            </NavLink>
-          );
-
-          return collapsed ? (
-            <SimpleTooltip key={item.to} label={item.label} side="right">
-              {link}
-            </SimpleTooltip>
-          ) : (
-            link
-          );
-        })}
+        {navItems.map((item) => (
+          <NavItemLink
+            key={item.to}
+            to={item.to}
+            label={item.label}
+            icon={item.icon}
+            end={item.to === "/"}
+            collapsed={collapsed}
+          />
+        ))}
+        {showLogs && (
+          <NavItemLink
+            to="/logs"
+            label="Logs"
+            icon={Terminal}
+            collapsed={collapsed}
+          />
+        )}
       </nav>
 
       <div className="px-2.5 pb-1">

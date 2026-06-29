@@ -23,6 +23,7 @@ import { Textarea } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Field } from "@/components/field";
 import { RemoteTypeFields } from "@/components/remote-type-fields";
+import { CustomRemoteForm } from "@/components/custom-remote-form";
 import { FolderPicker } from "@/components/folder-picker";
 import { RemoteIcon } from "@/components/brand-icon";
 import { useRemoteCatalog, useRemoteMutations, useRemotes } from "@/hooks/queries";
@@ -400,6 +401,11 @@ export function AddRemoteDialog({
               </Button>
             </DialogFooter>
           </>
+        ) : selected?.type === "custom" ? (
+          <CustomRemoteForm
+            onBack={() => setStep("pick")}
+            onClose={() => close(false)}
+          />
         ) : (
           selected && (
             <>

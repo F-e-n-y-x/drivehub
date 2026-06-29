@@ -1,22 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Download,
-  Eraser,
-  Pause,
-  Play,
-  Terminal,
-  X,
-} from "lucide-react";
+import { Download, Eraser, Pause, Play, X } from "lucide-react";
 import type { LogEntry, LogLevel } from "@drivehub/types";
 import { api, logsDownloadUrl } from "@/lib/api";
 import { useLogLevel, useSetLogLevel } from "@/hooks/queries";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { PageHeader } from "@/components/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SimpleSelect } from "@/components/ui/select";
@@ -28,14 +15,7 @@ import { cn } from "@/lib/utils";
 const MAX_LINES = 2000;
 const BACKLOG_LIMIT = 500;
 
-const LEVELS: LogLevel[] = [
-  "trace",
-  "debug",
-  "info",
-  "warn",
-  "error",
-  "fatal",
-];
+const LEVELS: LogLevel[] = ["trace", "debug", "info", "warn", "error", "fatal"];
 
 /** Numeric rank used for the "minimum level" client filter. */
 const LEVEL_RANK: Record<LogLevel, number> = {
@@ -67,7 +47,7 @@ function formatTime(ms: number): string {
   return `${hh}:${mm}:${ss}.${mmm}`;
 }
 
-export function LogsSection() {
+export function LogsPage() {
   const { data: levelData } = useLogLevel();
   const setLevel = useSetLogLevel();
 
@@ -90,7 +70,10 @@ export function LogsSection() {
     if (entry.id <= lastIdRef.current) return;
     lastIdRef.current = entry.id;
     setLines((prev) => {
-      const next = prev.length >= MAX_LINES ? prev.slice(prev.length - MAX_LINES + 1) : prev.slice();
+      const next =
+        prev.length >= MAX_LINES
+          ? prev.slice(prev.length - MAX_LINES + 1)
+          : prev.slice();
       next.push(entry);
       return next;
     });
@@ -140,8 +123,7 @@ export function LogsSection() {
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
-    atBottomRef.current =
-      el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
   };
 
   const filtered = useMemo(() => {
@@ -155,8 +137,8 @@ export function LogsSection() {
     });
   }, [lines, filter, minLevel]);
 
-  // Auto-scroll to the bottom after new lines render, but only if we were
-  // already pinned there.
+  // Auto-scroll the inner box to the bottom after new lines render, but only if
+  // we were already pinned there. Never grows or scrolls the page itself.
   useEffect(() => {
     if (atBottomRef.current && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -166,61 +148,13 @@ export function LogsSection() {
   const currentLevel = levelData?.level ?? "info";
 
   return (
-    <Card id="logs" className="scroll-mt-20">
-      <CardHeader className="flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <CardTitle className="flex items-center gap-2">
-            <Terminal className="size-4 text-muted-foreground" />
-            Logs
-          </CardTitle>
-          <CardDescription>
-            Live application log, streamed from the server. Adjust the runtime
-            level to capture more or less detail.
-          </CardDescription>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <Button
-            type="button"
-            variant={paused ? "accent" : "outline"}
-            size="sm"
-            onClick={() => setPaused((p) => !p)}
-          >
-            {paused ? (
-              <>
-                <Play className="size-4" />
-                Resume
-              </>
-            ) : (
-              <>
-                <Pause className="size-4" />
-                Pause
-              </>
-            )}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setLines([]);
-              atBottomRef.current = true;
-            }}
-          >
-            <Eraser className="size-4" />
-            Clear
-          </Button>
-          <a
-            href={logsDownloadUrl()}
-            download
-            className={buttonVariants({ variant: "outline", size: "sm" })}
-          >
-            <Download className="size-4" />
-            Download
-          </a>
-        </div>
-      </CardHeader>
+    <div className="flex h-full min-h-[32rem] w-full flex-col gap-6">
+      <PageHeader
+        title="Logs"
+        description="Live application log, streamed from the server in real time."
+      />
 
-      <CardContent className="space-y-3">
+      <div className="flex min-h-0 w-full flex-1 flex-col gap-3">
         {/* Controls */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="flex items-center gap-2">
@@ -274,17 +208,58 @@ export function LogsSection() {
               />
             </div>
           </div>
+
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              variant={paused ? "accent" : "outline"}
+              size="sm"
+              onClick={() => setPaused((p) => !p)}
+            >
+              {paused ? (
+                <>
+                  <Play className="size-4" />
+                  Resume
+                </>
+              ) : (
+                <>
+                  <Pause className="size-4" />
+                  Pause
+                </>
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setLines([]);
+                atBottomRef.current = true;
+              }}
+            >
+              <Eraser className="size-4" />
+              Clear
+            </Button>
+            <a
+              href={logsDownloadUrl()}
+              download
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+            >
+              <Download className="size-4" />
+              Download
+            </a>
+          </div>
         </div>
 
-        {/* Terminal viewer */}
+        {/* Terminal viewer — fills remaining height, scrolls internally. */}
         <div
           ref={scrollRef}
           onScroll={onScroll}
-          className="h-80 overflow-y-auto rounded-lg border border-border bg-zinc-950 p-3 font-mono text-xs leading-relaxed"
+          className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-zinc-950 p-3 font-mono text-xs leading-relaxed"
         >
           {loading ? (
             <div className="space-y-2">
-              {Array.from({ length: 12 }).map((_, i) => (
+              {Array.from({ length: 16 }).map((_, i) => (
                 <Skeleton
                   key={i}
                   className="h-3.5 rounded bg-zinc-800"
@@ -333,12 +308,12 @@ export function LogsSection() {
           )}
         </div>
 
-        <p className="text-xs text-muted-foreground">
+        <p className="shrink-0 text-xs text-muted-foreground">
           Showing {filtered.length} of {lines.length} buffered line
           {lines.length === 1 ? "" : "s"}
           {paused && " · live tail paused"}.
         </p>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

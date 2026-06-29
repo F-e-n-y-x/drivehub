@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   ArrowDownAZ,
   ArrowUpAZ,
@@ -15,18 +16,25 @@ import {
   List as ListIcon,
   Loader2,
   Pencil,
+  Plus,
   RotateCw,
   Scissors,
   Search,
   Trash2,
   X,
 } from "lucide-react";
-import type { RemoteEntry } from "@drivehub/types";
+import type { RemoteEntry, RemotePublic } from "@drivehub/types";
 import { useBrowse, useBrowseMutations, useRemotes } from "@/hooks/queries";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SimpleSelect } from "@/components/ui/select";
+import {
+  SimpleSelect,
+  SelectRoot,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
@@ -49,10 +57,11 @@ import { RemoteIcon } from "@/components/brand-icon";
 import { NamePromptDialog } from "@/components/name-prompt-dialog";
 import { FilePreviewDialog } from "@/components/file-preview-dialog";
 import { entryIcon } from "@/lib/file-icons";
-import { remoteSecondaryLabel } from "@/lib/remotes";
+import { remoteTypeLabel } from "@/lib/remotes";
 import { cn, formatBytes, formatRelativeTime } from "@/lib/utils";
 import { fileUrl, type ApiError, type TransferOpInput } from "@/lib/api";
 import { useClipboardStore } from "@/store/clipboard";
+import { useBrowserTabsStore, type BrowserTab } from "@/store/browser-tabs";
 
 type SortKey = "name" | "size" | "modified";
 type SortDir = "asc" | "desc";
@@ -73,17 +82,56 @@ type ViewMode = "list" | "grid";
 
 export function BrowserPage() {
   const { data: remotes, isLoading: remotesLoading } = useRemotes();
-  const [remoteId, setRemoteId] = useState("");
+  const tabs = useBrowserTabsStore((s) => s.tabs);
+  const activeTabId = useBrowserTabsStore((s) => s.activeTabId);
+  const addTab = useBrowserTabsStore((s) => s.addTab);
+  const closeTab = useBrowserTabsStore((s) => s.closeTab);
+  const setActive = useBrowserTabsStore((s) => s.setActive);
+  const updateActiveTab = useBrowserTabsStore((s) => s.updateActiveTab);
 
-  // Default to the first remote once loaded.
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]!;
+
+  // Deep link: `/browser?remote=<id>` (e.g. the "Browse" button on a remote
+  // card) lands directly on that remote's root. If the active tab is already
+  // pointed elsewhere, open a fresh tab so we don't clobber the user's place;
+  // otherwise just point the active tab there. The param is consumed once.
   useEffect(() => {
-    if (!remoteId && remotes && remotes.length > 0) {
-      setRemoteId(remotes[0]!.id);
+    const wanted = searchParams.get("remote");
+    if (!wanted || !remotes) return;
+    const exists = remotes.some((r) => r.id === wanted);
+    if (exists) {
+      if (activeTab.remoteId && activeTab.remoteId !== wanted) {
+        addTab({ remoteId: wanted, path: "" });
+      } else {
+        updateActiveTab({ remoteId: wanted, path: "" });
+      }
     }
-  }, [remotes, remoteId]);
+    // Clear the param either way so a refresh doesn't re-trigger this.
+    searchParams.delete("remote");
+    setSearchParams(searchParams, { replace: true });
+    // Run once per deep-link; `remotes` gates it until the list is loaded.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remotes]);
+
+  // Seed the active tab with the first remote once remotes load (only if it has
+  // none yet — never clobber a tab the user has already pointed somewhere).
+  useEffect(() => {
+    if (searchParams.get("remote")) return; // let the deep-link effect win
+    if (!activeTab.remoteId && remotes && remotes.length > 0) {
+      updateActiveTab({ remoteId: remotes[0]!.id });
+    }
+  }, [remotes, activeTab.remoteId, updateActiveTab, searchParams]);
+
+  const remoteById = useMemo(() => {
+    const m = new Map<string, RemotePublic>();
+    for (const r of remotes ?? []) m.set(r.id, r);
+    return m;
+  }, [remotes]);
 
   return (
-    <div className="flex h-full min-h-[32rem] flex-col gap-6">
+    <div className="flex h-full min-h-[32rem] w-full flex-col gap-6">
       <PageHeader
         title="Remote Browser"
         description="Browse, organize, and manage files on any connected remote."
@@ -98,44 +146,199 @@ export function BrowserPage() {
           description="Connect a storage remote to browse its files here."
         />
       ) : (
-        <FileManager
-          key={remoteId}
-          remoteId={remoteId}
-          remoteSelector={
-            <div className="w-full sm:w-64">
-              <SimpleSelect
-                value={remoteId}
-                onValueChange={setRemoteId}
-                aria-label="Select remote"
-                options={remotes.map((r) => ({
-                  value: r.id,
-                  label: (
-                    <span className="flex min-w-0 items-center gap-2">
-                      <RemoteIcon type={r.type} className="size-4" />
-                      <span className="truncate">{r.label}</span>
-                      <span className="truncate text-muted-foreground">
-                        · {remoteSecondaryLabel(r)}
-                      </span>
-                    </span>
-                  ),
-                }))}
+        <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card">
+          <TabStrip
+            tabs={tabs}
+            activeTabId={activeTabId}
+            remoteById={remoteById}
+            onSelect={setActive}
+            onClose={closeTab}
+            onAdd={() => addTab({ remoteId: activeTab.remoteId })}
+          />
+          <FileManager
+            key={activeTab.id}
+            remoteId={activeTab.remoteId ?? ""}
+            path={activeTab.path}
+            onPathChange={(path) => updateActiveTab({ path })}
+            remoteSelector={
+              <RemoteSelector
+                remotes={remotes}
+                value={activeTab.remoteId ?? ""}
+                onChange={(remoteId) =>
+                  // Switching remote resets to that remote's root.
+                  updateActiveTab({ remoteId, path: "" })
+                }
               />
-            </div>
-          }
-        />
+            }
+          />
+        </div>
       )}
     </div>
   );
 }
 
+/** Basename of a path, or "" at the root. */
+function basename(path: string): string {
+  if (!path) return "";
+  const parts = path.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? "";
+}
+
+/** The short title shown on a tab: folder name, else remote label, else hint. */
+function tabTitle(tab: BrowserTab, remote: RemotePublic | undefined): string {
+  const base = basename(tab.path);
+  if (base) return base;
+  if (remote) return remote.label;
+  return "New tab";
+}
+
+// --- Tab strip (Explorer / browser-style) -----------------------------------
+
+function TabStrip({
+  tabs,
+  activeTabId,
+  remoteById,
+  onSelect,
+  onClose,
+  onAdd,
+}: {
+  tabs: BrowserTab[];
+  activeTabId: string;
+  remoteById: Map<string, RemotePublic>;
+  onSelect: (id: string) => void;
+  onClose: (id: string) => void;
+  onAdd: () => void;
+}) {
+  const multiple = tabs.length > 1;
+  return (
+    <div className="flex items-stretch gap-1 overflow-x-auto border-b border-border bg-muted/30 px-2 pt-1.5">
+      {tabs.map((tab) => {
+        const remote = tab.remoteId ? remoteById.get(tab.remoteId) : undefined;
+        const active = tab.id === activeTabId;
+        const title = tabTitle(tab, remote);
+        return (
+          <div
+            key={tab.id}
+            role="tab"
+            aria-selected={active}
+            tabIndex={0}
+            onClick={() => onSelect(tab.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelect(tab.id);
+              }
+            }}
+            title={remote ? `${remote.label} · /${tab.path}` : title}
+            className={cn(
+              "group flex min-w-[8rem] max-w-[14rem] shrink-0 cursor-pointer items-center gap-2 rounded-t-lg border-b-2 px-3 py-2 text-[13px] transition-colors",
+              active
+                ? "border-accent bg-card font-medium text-foreground"
+                : "border-transparent text-muted-foreground hover:bg-card/60 hover:text-foreground",
+            )}
+          >
+            {remote ? (
+              <RemoteIcon type={remote.type} className="size-3.5" />
+            ) : (
+              <HardDrive className="size-3.5 text-muted-foreground" />
+            )}
+            <span className="min-w-0 flex-1 truncate">{title}</span>
+            {multiple && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose(tab.id);
+                }}
+                aria-label={`Close ${title}`}
+                title="Close tab"
+                className="-mr-1 shrink-0 rounded p-0.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
+            )}
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        onClick={onAdd}
+        aria-label="New tab"
+        title="New tab"
+        className="my-1 ml-0.5 flex size-7 shrink-0 items-center justify-center self-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <Plus className="size-4" />
+      </button>
+    </div>
+  );
+}
+
+// --- Two-line remote selector -----------------------------------------------
+
+function RemoteSelector({
+  remotes,
+  value,
+  onChange,
+}: {
+  remotes: RemotePublic[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const selected = remotes.find((r) => r.id === value);
+  return (
+    <div className="w-full sm:w-72">
+      <SelectRoot value={value} onValueChange={onChange}>
+        <SelectTrigger
+          aria-label="Select remote"
+          className="h-auto min-h-[3.25rem] min-w-[14rem] py-1.5"
+        >
+          {selected ? (
+            <RemoteLines remote={selected} />
+          ) : (
+            <span className="text-muted-foreground/70">Select a remote…</span>
+          )}
+        </SelectTrigger>
+        <SelectContent>
+          {remotes.map((r) => (
+            <SelectItem key={r.id} value={r.id} className="py-1.5">
+              <RemoteLines remote={r} />
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </SelectRoot>
+    </div>
+  );
+}
+
+/** Two-line remote presentation: icon + label, then a muted secondary line. */
+function RemoteLines({ remote }: { remote: RemotePublic }) {
+  const secondary = remote.summary.email?.trim() || remoteTypeLabel(remote.type);
+  return (
+    <span className="flex min-w-0 items-center gap-2 text-left">
+      <RemoteIcon type={remote.type} className="size-5 shrink-0" />
+      <span className="flex min-w-0 flex-1 flex-col leading-tight">
+        <span className="truncate text-sm font-medium text-foreground">
+          {remote.label}
+        </span>
+        <span className="truncate text-xs text-muted-foreground">
+          {secondary}
+        </span>
+      </span>
+    </span>
+  );
+}
+
 function FileManager({
   remoteId,
+  path,
+  onPathChange,
   remoteSelector,
 }: {
   remoteId: string;
+  path: string;
+  onPathChange: (path: string) => void;
   remoteSelector: React.ReactNode;
 }) {
-  const [path, setPath] = useState("");
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -163,7 +366,7 @@ function FileManager({
   const entries = data?.entries ?? [];
 
   const go = (next: string) => {
-    setPath(next);
+    onPathChange(next);
     setQuery("");
     setSelected(new Set());
     setAnchor(null);
@@ -336,8 +539,19 @@ function FileManager({
   const single = selectedEntries.length === 1 ? selectedEntries[0]! : null;
   const clipboardCount = clipboard.entries.length;
 
+  // The preview lightbox pages through the current folder's *files* (skipping
+  // folders), in the same order they're shown. Memoized so the open preview
+  // keeps a stable sibling list as it navigates.
+  const previewSiblings = useMemo(
+    () => visible.filter((e) => !e.isDir),
+    [visible],
+  );
+  const previewIndex = previewEntry
+    ? previewSiblings.findIndex((e) => e.path === previewEntry.path)
+    : -1;
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Toolbar */}
       <div className="sticky top-0 z-10 flex flex-col gap-3 border-b border-border bg-card/95 p-3 backdrop-blur">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -672,6 +886,12 @@ function FileManager({
         onOpenChange={(o) => !o && setPreviewEntry(null)}
         remoteId={remoteId}
         entry={previewEntry}
+        siblings={previewSiblings}
+        index={previewIndex}
+        onNavigate={(i) => {
+          const next = previewSiblings[i];
+          if (next) setPreviewEntry(next);
+        }}
       />
     </div>
   );

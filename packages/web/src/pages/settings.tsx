@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
-import { Loader2, Save } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
+import { Loader2, Save, Terminal } from "lucide-react";
 import type { AppSettings } from "@drivehub/types";
 import { useSettings, useSaveSettings } from "@/hooks/queries";
 import { UpdatesSection } from "@/components/settings/updates-section";
 import { SystemSection } from "@/components/settings/system-section";
-import { LogsSection } from "@/components/settings/logs-section";
 import { useUIStore, type ThemePreference } from "@/store/ui";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -15,8 +14,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { QueryError } from "@/components/query-error";
 import { cn } from "@/lib/utils";
@@ -55,6 +55,8 @@ export function SettingsPage() {
   const { data: settings, isLoading, isError, refetch } = useSettings();
   const save = useSaveSettings();
   const setTheme = useUIStore((s) => s.setTheme);
+  const showLogs = useUIStore((s) => s.showLogs);
+  const setShowLogs = useUIStore((s) => s.setShowLogs);
   const { hash } = useLocation();
 
   const [form, setForm] = useState<AppSettings | null>(null);
@@ -218,17 +220,39 @@ export function SettingsPage() {
 
       <SystemSection />
 
-      <div className="space-y-3 pt-2">
-        <div>
-          <h2 className="text-base font-semibold tracking-tight text-foreground">
-            Developer
-          </h2>
-          <p className="text-sm text-muted-foreground">
+      <Card id="logs" className="scroll-mt-20">
+        <CardHeader>
+          <CardTitle>Developer</CardTitle>
+          <CardDescription>
             Diagnostics and live logs for troubleshooting.
-          </p>
-        </div>
-        <LogsSection />
-      </div>
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Row
+            label="Show Logs page"
+            description="Adds a Logs page to the sidebar for full-screen log viewing."
+          >
+            <Switch
+              checked={showLogs}
+              onCheckedChange={setShowLogs}
+              aria-label="Show Logs page"
+            />
+          </Row>
+
+          {showLogs && (
+            <>
+              <div className="h-px bg-border" />
+              <Link
+                to="/logs"
+                className={buttonVariants({ variant: "outline", size: "sm" })}
+              >
+                <Terminal className="size-4" />
+                Open Logs
+              </Link>
+            </>
+          )}
+        </CardContent>
+      </Card>
     </form>
   );
 }

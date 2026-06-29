@@ -6,9 +6,12 @@ export type ThemePreference = "light" | "dark" | "system";
 interface UIState {
   theme: ThemePreference;
   sidebarCollapsed: boolean;
+  /** When true, a dedicated full-screen Logs page is exposed in the sidebar. */
+  showLogs: boolean;
   setTheme: (theme: ThemePreference) => void;
   toggleSidebar: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
+  setShowLogs: (v: boolean) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -16,16 +19,19 @@ export const useUIStore = create<UIState>()(
     (set) => ({
       theme: "system",
       sidebarCollapsed: false,
+      showLogs: false,
       setTheme: (theme) => set({ theme }),
       toggleSidebar: () =>
         set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
+      setShowLogs: (showLogs) => set({ showLogs }),
     }),
     {
       name: "drivehub-theme",
       partialize: (s) => ({
         theme: s.theme,
         sidebarCollapsed: s.sidebarCollapsed,
+        showLogs: s.showLogs,
       }),
     },
   ),

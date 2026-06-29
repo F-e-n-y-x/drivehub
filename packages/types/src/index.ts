@@ -21,7 +21,8 @@ export type RemoteType =
   | "icloud"
   | "webdav"
   | "smb"
-  | "sftp";
+  | "sftp"
+  | "custom";
 
 export type RemoteStatus = "ok" | "error" | "unconfigured";
 
@@ -49,6 +50,18 @@ export interface RemoteTypeField {
   required: boolean;
   placeholder?: string;
   help?: string;
+}
+
+export interface RemoteAbout {
+  total: number | null;
+  used: number | null;
+  free: number | null;
+}
+
+export interface SpeedTestResult {
+  sizeBytes: number;
+  uploadBytesPerSec: number | null;
+  downloadBytesPerSec: number | null;
 }
 
 export interface RemoteTypeInfo {

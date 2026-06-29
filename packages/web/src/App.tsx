@@ -11,6 +11,7 @@ import { JobRunsPage } from "@/pages/job-runs";
 import { BrowserPage } from "@/pages/browser";
 import { ActivityPage } from "@/pages/activity";
 import { SettingsPage } from "@/pages/settings";
+import { LogsPage } from "@/pages/logs";
 import { NotFoundPage } from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -38,6 +39,7 @@ export function App() {
                 <Route path="/browser" element={<BrowserPage />} />
                 <Route path="/activity" element={<ActivityPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/logs" element={<LogsPage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Route>
             </Routes>
