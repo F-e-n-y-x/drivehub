@@ -1,6 +1,7 @@
 import { createReadStream, existsSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import cookie from "@fastify/cookie";
 import fastifyStatic from "@fastify/static";
@@ -16,7 +17,7 @@ import { authUrl, exchangeCodeForRclone } from "../google/oauth.js";
 import { getLogLevel, setLogLevel } from "../logger.js";
 import { logStore } from "../logs/store.js";
 
-const REMOTE_TYPES = ["local", "s3", "b2", "drive", "dropbox", "onedrive", "icloud", "webdav", "alist", "terabox", "smb", "sftp", "custom"] as const;
+const REMOTE_TYPES = ["local", "s3", "b2", "drive", "dropbox", "onedrive", "icloud", "webdav", "alist", "terabox", "teldrive", "alldebrid", "smb", "sftp", "custom"] as const;
 
 const SettingsSchema = z.object({
   concurrency: z.number().int().min(1).max(32),
@@ -314,12 +315,45 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     const { id } = req.params as { id: string };
     const q = req.query as { path?: string; download?: string };
     if (!q.path) return reply.code(400).send({ error: "bad_request", message: "path required" });
-    if (!repo.getRemote(id)) return reply.code(404).send({ error: "not_found", message: "remote" });
+    const row = repo.getRemote(id);
+    if (!row) return reply.code(404).send({ error: "not_found", message: "remote" });
 
     const target = orch.remotes.target(id, q.path);
     const filename = path.posix.basename(q.path);
-    const total = await cachedSize(`${id}:${q.path}`, () => orch.rclone.size(target));
     const rangeHeader = req.headers.range;
+
+    // Cloud remotes stream through a cached `rclone serve http` (instant seeks,
+    // read-ahead). Local needs no cache; TeraBox's backend downloads are broken
+    // and serve can't fix them, so both keep the direct path. Any serve failure
+    // falls back to `rclone cat` below.
+    if (row.type !== "local" && row.type !== "terabox") {
+      try {
+        const upstream = await orch.media.urlFor(row.name, q.path);
+        const resp = await fetch(upstream, {
+          headers: rangeHeader ? { range: rangeHeader } : {},
+        });
+        if (!resp.body || (resp.status !== 200 && resp.status !== 206)) {
+          throw new Error(`serve responded ${resp.status}`);
+        }
+        reply.hijack();
+        const h = fileResponseHeaders(filename, q.download != null);
+        const cr = resp.headers.get("content-range");
+        const cl = resp.headers.get("content-length");
+        if (cr) h["Content-Range"] = cr;
+        if (cl) h["Content-Length"] = cl;
+        reply.raw.writeHead(resp.status, h);
+        const body = Readable.fromWeb(resp.body as Parameters<typeof Readable.fromWeb>[0]);
+        body.pipe(reply.raw);
+        body.on("error", () => reply.raw.destroy());
+        req.raw.on("close", () => body.destroy());
+        return;
+      } catch (e) {
+        logger.debug({ err: String(e), id }, "vfs serve unavailable; using rclone cat");
+        // fall through to the cat path (response not yet hijacked)
+      }
+    }
+
+    const total = await cachedSize(`${id}:${q.path}`, () => orch.rclone.size(target));
 
     reply.hijack();
     const headers = fileResponseHeaders(filename, q.download != null);

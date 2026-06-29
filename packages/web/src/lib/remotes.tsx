@@ -19,6 +19,8 @@ const TYPE_LABELS: Record<RemoteType, string> = {
   webdav: "WebDAV",
   alist: "AList / OpenList",
   terabox: "TeraBox",
+  teldrive: "Teldrive",
+  alldebrid: "AllDebrid",
   smb: "SMB / NAS",
   sftp: "SFTP",
   custom: "Custom",

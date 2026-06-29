@@ -92,6 +92,39 @@ export const REMOTE_CATALOG: RemoteTypeInfo[] = [
     ],
   },
   {
+    type: "teldrive",
+    label: "Teldrive (Telegram)",
+    oauth: false,
+    description:
+      "Telegram-backed storage via your own Teldrive server (bundled rclone-extra backend). Point at the Teldrive instance and paste its session token.",
+    fields: [
+      { key: "api_host", label: "API host", type: "text", required: true, placeholder: "https://teldrive.example.com" },
+      {
+        key: "access_token",
+        label: "Access token (session)",
+        type: "password",
+        required: true,
+        help: "In your Teldrive web UI: DevTools (F12) → Application → Cookies → copy the user_session value.",
+      },
+    ],
+  },
+  {
+    type: "alldebrid",
+    label: "AllDebrid",
+    oauth: false,
+    description:
+      "Browse your AllDebrid media folder over AllDebrid's WebDAV. Create an API key in your AllDebrid account.",
+    fields: [
+      {
+        key: "api_key",
+        label: "API key",
+        type: "password",
+        required: true,
+        help: "Create one at alldebrid.com → Apikeys panel, then paste it here.",
+      },
+    ],
+  },
+  {
     type: "smb",
     label: "SMB / CIFS (NAS, Windows share)",
     oauth: false,
@@ -164,6 +197,8 @@ const RCLONE_BACKEND: Partial<Record<RemoteType, string>> = {
   icloud: "iclouddrive",
   alist: "webdav", // AList/OpenList is reached via its WebDAV endpoint
   terabox: "terabox", // native backend (bundled rclone-extra fork)
+  teldrive: "teldrive", // native backend (bundled rclone-extra fork)
+  alldebrid: "webdav", // AllDebrid exposes a WebDAV media folder
 };
 function rcloneBackend(type: RemoteType): string {
   return RCLONE_BACKEND[type] ?? type;
@@ -176,6 +211,8 @@ const SECRET_KEYS = new Set([
   "token",
   "client_secret",
   "cookie",
+  "access_token",
+  "api_key",
 ]);
 
 /** Looks secret by name (covers arbitrary keys from custom backends). */
@@ -264,6 +301,16 @@ export class RemoteService {
 
     // AList speaks generic WebDAV; rclone needs the vendor hint.
     if (input.type === "alist" && !params.vendor) params.vendor = "other";
+
+    // AllDebrid is just WebDAV under the hood: API key = username, password is
+    // ignored. Translate the single "API key" field into a WebDAV config.
+    if (input.type === "alldebrid") {
+      params.url = "https://webdav.debrid.it/";
+      params.vendor = "other";
+      params.user = params.api_key ?? "";
+      params.pass = params.api_key ?? "x"; // AllDebrid ignores the password
+      delete params.api_key;
+    }
 
     let summary: Record<string, string>;
     if (input.type === "custom") {

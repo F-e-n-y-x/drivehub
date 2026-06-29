@@ -12,6 +12,7 @@ import { ContainerQuiescer } from "./docker/quiesce.js";
 import { JobRunner } from "./backup/runner.js";
 import { Scheduler } from "./backup/scheduler.js";
 import { UpdateService } from "./updates/service.js";
+import { MediaServerManager } from "./media/server.js";
 
 const APP_VERSION = process.env.APP_VERSION ?? "0.1.0";
 const GIT_SHA = process.env.GIT_SHA ?? null;
@@ -28,6 +29,7 @@ export class Orchestrator {
   readonly runner: JobRunner;
   readonly quiescer: ContainerQuiescer;
   readonly updates: UpdateService;
+  readonly media: MediaServerManager;
   private readonly scheduler: Scheduler;
 
   private mode: "running" | "paused" = "running";
@@ -59,6 +61,12 @@ export class Orchestrator {
       () => this.quiescer.available(),
       logger,
     );
+    this.media = new MediaServerManager(
+      config.RCLONE_BIN ?? "rclone",
+      path.join(config.DATA_DIR, "rclone.conf"),
+      path.join(config.DATA_DIR, "vfs-cache"),
+      logger,
+    );
   }
 
   async start(): Promise<void> {
@@ -84,6 +92,7 @@ export class Orchestrator {
 
   async stop(): Promise<void> {
     this.scheduler.stop();
+    this.media.stopAll();
   }
 
   pause(): void {

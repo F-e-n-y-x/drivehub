@@ -127,9 +127,26 @@ and **primary** password (not an app-specific password), then enter the 6-digit
 may need a periodic reconnect; accounts with Advanced Data Protection aren't
 supported.
 
+**Teldrive (Telegram storage)** — run your own
+[Teldrive](https://github.com/tgdrive/teldrive) server, then **Add remote →
+Teldrive (Telegram)**: enter its API host and the `user_session` token (from the
+Teldrive web UI → DevTools → Application → Cookies). Native backend via
+rclone-extra.
+
+**AllDebrid** — create an API key in your AllDebrid account (Apikeys panel), then
+**Add remote → AllDebrid** and paste it. DriveHub connects to AllDebrid's WebDAV
+media folder for you.
+
 **Anything else (pCloud, Mega, Koofr, Storj, Box, Yandex…)** — use
 **Add remote → Custom / other (advanced)**: enter the rclone backend name plus
 its config keys.
+
+> **Smooth video preview.** For cloud remotes, DriveHub streams previews through
+> an on-demand `rclone serve http` with a VFS read cache, so large videos seek
+> instantly and re-watch from cache instead of re-downloading. The cache lives at
+> `/data/app/vfs-cache` (capped, auto-pruned); the server is started on first use
+> and reaped when idle. (TeraBox stays on the direct path — its backend downloads
+> are unreliable regardless.)
 
 ## TeraBox
 

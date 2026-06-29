@@ -22,6 +22,8 @@ export type RemoteType =
   | "webdav"
   | "alist"
   | "terabox"
+  | "teldrive"
+  | "alldebrid"
   | "smb"
   | "sftp"
   | "custom";

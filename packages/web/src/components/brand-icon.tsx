@@ -14,6 +14,8 @@ import {
   Cloud,
   SlidersHorizontal,
   Layers,
+  Send,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import type { RemoteType } from "@drivehub/types";
@@ -54,6 +56,8 @@ const SPEC: Record<RemoteType, BrandSpec> = {
   webdav: { Icon: Server, brand: false },
   alist: { Icon: Layers, brand: false },
   terabox: { Icon: Cloud, color: "#0A84FF", brand: true },
+  teldrive: { Icon: Send, color: "#229ED9", brand: true },
+  alldebrid: { Icon: Zap, color: "#E5532D", brand: true },
   sftp: { Icon: Server, brand: false },
   custom: { Icon: SlidersHorizontal, brand: false },
 };
