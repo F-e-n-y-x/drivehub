@@ -524,7 +524,7 @@ export function AddRemoteDialog({
                     label="rclone token"
                     htmlFor="remote-token"
                     required
-                    hint={`Run rclone authorize "${selected.type}" on any machine, then paste the JSON token it prints here.`}
+                    hint={`No app or install needed: download the single rclone binary (rclone.org/downloads — it's portable, just unzip), run  rclone authorize "${selected.type}"  in a terminal, sign in in the browser it opens, then paste the JSON it prints here.`}
                   >
                     <Textarea
                       id="remote-token"

@@ -41,7 +41,9 @@ function Row({
           </p>
         )}
       </div>
-      <div>{children}</div>
+      {/* Right-align controls so narrow inputs share the same right edge as
+          the full-width ones (no stray gap on the right). */}
+      <div className="flex sm:justify-end">{children}</div>
     </div>
   );
 }
