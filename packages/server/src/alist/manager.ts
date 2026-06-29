@@ -7,17 +7,18 @@ import { decryptSecret, encryptSecret } from "../crypto.js";
 import type { Repo } from "../db/repo.js";
 import type { Logger } from "../logger.js";
 import type { RemotePublic } from "@drivehub/types";
+import { toRemotePublic } from "../db/repo.js";
 import type { RemoteService } from "../rclone/remotes.js";
 import { AlistApi } from "./api.js";
 
 const PW_KEY = "alist_admin_pw";
-const REMOTE_KEY = "alist_remote_created";
 
 /**
  * Optional built-in AList. When ENABLE_ALIST is set, we run the bundled `alist`
- * binary as a managed subprocess, bootstrap an admin password, and auto-create
- * a WebDAV remote pointing at it — so users get TeraBox/Quark/Baidu/115/etc.
- * through one DriveHub remote without standing up a second container.
+ * binary as a managed subprocess for backends rclone can't reach (TeraBox,
+ * Quark, Baidu, 115…). AList itself is infrastructure (its status lives in
+ * Settings) — it is NOT shown as a remote; instead each storage the user adds
+ * (e.g. via the TeraBox flow) becomes its own first-class DriveHub remote.
  *
  * Everything here is best-effort and gated: failures are logged, never thrown,
  * so they can't take down the core app.
@@ -79,7 +80,6 @@ export class AlistManager {
       await this.setAdminPassword(pw);
       this.spawnServer();
       await this.waitForReady();
-      await this.ensureRemote(pw);
       this.logger.info({ port: this.config.ALIST_PORT }, "built-in AList ready");
     } catch (e) {
       this.logger.error({ err: String(e) }, "built-in AList failed to start (continuing without it)");
@@ -113,7 +113,7 @@ export class AlistManager {
     await api.createStorage({ mountPath, driver: input.driver, addition: input.addition });
 
     // Expose it as a WebDAV-backed DriveHub remote scoped to that mount.
-    return this.remotes.create({
+    const remote = await this.remotes.create({
       type: input.driver.toLowerCase() === "terabox" ? "terabox" : "alist",
       label: input.label,
       params: {
@@ -123,6 +123,10 @@ export class AlistManager {
         vendor: "other",
       },
     });
+    // The WebDAV plumbing (admin user, 127.0.0.1 URL) is an internal detail —
+    // don't surface it on the card; just show the provider.
+    this.repo.updateRemote(remote.id, { summary: JSON.stringify({}) });
+    return toRemotePublic(this.repo.getRemote(remote.id)!);
   }
 
   private ensurePassword(): string {
@@ -183,19 +187,4 @@ export class AlistManager {
     throw new Error("AList did not become ready within 30s");
   }
 
-  /** Create a managed WebDAV remote pointing at the built-in AList, once. */
-  private async ensureRemote(pw: string): Promise<void> {
-    if (this.repo.kvGet(REMOTE_KEY)) return;
-    await this.remotes.create({
-      type: "alist",
-      label: "AList (built-in)",
-      params: {
-        url: `http://127.0.0.1:${this.config.ALIST_PORT}/dav`,
-        user: "admin",
-        pass: pw,
-        vendor: "other",
-      },
-    });
-    this.repo.kvSet(REMOTE_KEY, "1");
-  }
 }

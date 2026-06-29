@@ -258,6 +258,8 @@ export interface AppSettings {
   excludePatterns: string[];
   /** Bandwidth limit, rclone --bwlimit syntax (e.g. "10M", "" = unlimited). */
   bandwidthLimit: string;
+  /** Sample size (MB) used by the on-demand remote speed test. */
+  speedTestSizeMb: number;
   theme: "light" | "dark" | "system";
 }
 

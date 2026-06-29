@@ -468,10 +468,12 @@ export class RemoteService {
    */
   async speedTest(
     remoteId: string,
-    sizeBytes = 32 * 1024 * 1024,
+    sizeBytesOverride?: number,
   ): Promise<{ sizeBytes: number; uploadBytesPerSec: number | null; downloadBytesPerSec: number | null; at: number }> {
     const row = this.repo.getRemote(remoteId);
     if (!row) throw new Error("Unknown remote");
+    const mb = this.repo.getSettings().speedTestSizeMb || 32;
+    const sizeBytes = sizeBytesOverride ?? mb * 1024 * 1024;
     const tmpDir = path.join(this.config.DATA_DIR, "tmp");
     await mkdir(tmpDir, { recursive: true });
     const upPath = path.join(tmpDir, `speedtest-up-${nanoid(6)}.bin`);
@@ -491,7 +493,12 @@ export class RemoteService {
       const t1 = Date.now();
       const up = await this.rclone.copyto(upPath, remoteTarget, perfArgs);
       const upMs = Date.now() - t1;
-      if (up.code !== 0) throw new Error(up.stderr.split("\n").filter(Boolean).pop() ?? "upload failed");
+      if (up.code !== 0) {
+        if (/method not allowed|405|read.?only|not allowed|forbidden|403/i.test(up.stderr)) {
+          throw new Error("This remote doesn't allow uploads, so a speed test isn't available for it.");
+        }
+        throw new Error(up.stderr.split("\n").filter(Boolean).pop() ?? "upload failed");
+      }
       uploadBytesPerSec = upMs > 0 ? Math.round(sizeBytes / (upMs / 1000)) : null;
 
       const t2 = Date.now();

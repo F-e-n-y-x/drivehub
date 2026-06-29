@@ -152,6 +152,30 @@ export function SettingsPage() {
               className="w-40 font-mono"
             />
           </Row>
+
+          <div className="h-px bg-border" />
+
+          <Row
+            label="Speed test size"
+            description="Sample size (MB) uploaded & downloaded by a remote speed test. Larger = more accurate, more bandwidth."
+          >
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min={1}
+                max={1024}
+                value={form.speedTestSizeMb}
+                onChange={(e) =>
+                  update(
+                    "speedTestSizeMb",
+                    Math.min(1024, Math.max(1, Number(e.target.value) || 1)),
+                  )
+                }
+                className="w-28"
+              />
+              <span className="text-sm text-muted-foreground">MB</span>
+            </div>
+          </Row>
         </CardContent>
       </Card>
 
@@ -256,6 +280,20 @@ export function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Always-reachable save bar that sticks to the bottom while scrolling. */}
+      <div className="sticky bottom-0 z-10 -mx-5 mt-1 border-t border-border bg-background/80 px-5 py-3 backdrop-blur sm:-mx-8 sm:px-8">
+        <div className="flex items-center justify-end">
+          <Button type="submit" variant="accent" disabled={save.isPending}>
+            {save.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Save className="size-4" />
+            )}
+            Save changes
+          </Button>
+        </div>
+      </div>
     </form>
   );
 }

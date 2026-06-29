@@ -22,6 +22,7 @@ const SettingsSchema = z.object({
   concurrency: z.number().int().min(1).max(32),
   excludePatterns: z.array(z.string()),
   bandwidthLimit: z.string(),
+  speedTestSizeMb: z.number().int().min(1).max(1024),
   theme: z.enum(["light", "dark", "system"]),
 });
 

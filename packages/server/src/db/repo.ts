@@ -31,6 +31,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     "**/*-shm",
   ],
   bandwidthLimit: "",
+  speedTestSizeMb: 32,
   theme: "system",
 };
 
