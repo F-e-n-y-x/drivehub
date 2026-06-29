@@ -4,7 +4,13 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import type { AppSettings, JobInput } from "@drivehub/types";
-import { api, qk, type CreateRemoteInput, type OAuthTokenInput } from "@/lib/api";
+import {
+  api,
+  qk,
+  type CreateRemoteInput,
+  type OAuthTokenInput,
+  type TransferOpInput,
+} from "@/lib/api";
 import { toast } from "@/components/ui/toast";
 
 // --- Reads ----------------------------------------------------------------
@@ -190,6 +196,86 @@ export function useRemoteMutations() {
   });
 
   return { create, createOAuth, remove, test };
+}
+
+// --- Remote file-manager ops ----------------------------------------------
+
+/**
+ * Mutations for the file explorer, scoped to the folder currently shown
+ * (`remoteId` + `path`). Every op invalidates that folder's `browse` query so
+ * the listing refreshes, and toasts on success/error. Paste may target a
+ * different remote, so it invalidates the whole `browse` namespace.
+ */
+export function useBrowseMutations(remoteId: string, path: string) {
+  const qc = useQueryClient();
+  const refresh = () =>
+    qc.invalidateQueries({ queryKey: qk.browse(remoteId, path) });
+
+  const mkdir = useMutation({
+    mutationFn: (name: string) => api.mkdir(remoteId, joinPath(path, name)),
+    onSuccess: () => {
+      refresh();
+      toast.success("Folder created");
+    },
+    onError: (e: Error) =>
+      toast.error("Couldn't create folder", { description: e.message }),
+  });
+
+  const touch = useMutation({
+    mutationFn: (name: string) => api.touch(remoteId, joinPath(path, name)),
+    onSuccess: () => {
+      refresh();
+      toast.success("File created");
+    },
+    onError: (e: Error) =>
+      toast.error("Couldn't create file", { description: e.message }),
+  });
+
+  const rename = useMutation({
+    mutationFn: ({ entryPath, newName }: { entryPath: string; newName: string }) =>
+      api.rename(remoteId, entryPath, newName),
+    onSuccess: () => {
+      refresh();
+      toast.success("Renamed");
+    },
+    onError: (e: Error) =>
+      toast.error("Couldn't rename", { description: e.message }),
+  });
+
+  const remove = useMutation({
+    mutationFn: (entries: { path: string; isDir: boolean }[]) =>
+      Promise.all(entries.map((e) => api.deleteEntry(remoteId, e.path, e.isDir))),
+    onSuccess: (_res, entries) => {
+      refresh();
+      toast.success(
+        entries.length === 1 ? "Deleted" : `Deleted ${entries.length} items`,
+      );
+    },
+    onError: (e: Error) =>
+      toast.error("Couldn't delete", { description: e.message }),
+  });
+
+  const paste = useMutation({
+    mutationFn: (ops: TransferOpInput[]) =>
+      Promise.all(ops.map((o) => api.transferOp(o))),
+    onSuccess: (_res, ops) => {
+      // Paste can write into this remote (and read from another); refresh all.
+      qc.invalidateQueries({ queryKey: ["browse"] });
+      const verb = ops[0]?.op === "move" ? "Moved" : "Copied";
+      toast.success(
+        ops.length === 1 ? `${verb} 1 item` : `${verb} ${ops.length} items`,
+      );
+    },
+    onError: (e: Error) =>
+      toast.error("Couldn't paste", { description: e.message }),
+  });
+
+  return { mkdir, touch, rename, remove, paste };
+}
+
+/** Joins a folder path and a leaf name without leading/duplicate slashes. */
+function joinPath(dir: string, name: string): string {
+  return dir ? `${dir}/${name}` : name;
 }
 
 // --- Jobs -----------------------------------------------------------------

@@ -71,6 +71,25 @@ export interface OAuthTokenInput {
   token: string;
 }
 
+export interface TransferOpInput {
+  srcRemoteId: string;
+  srcPath: string;
+  dstRemoteId: string;
+  dstPath: string;
+  op: "copy" | "move";
+}
+
+/**
+ * Builds the URL that streams a remote file's bytes. Use directly as an
+ * `<img>/<video>/<audio>/<iframe>` src or download href, or fetch it for text
+ * preview. `download` sets a Content-Disposition: attachment on the response.
+ */
+export function fileUrl(id: string, path: string, download?: boolean): string {
+  const params = new URLSearchParams({ path });
+  if (download) params.set("download", "1");
+  return `/api/remotes/${encodeURIComponent(id)}/file?${params.toString()}`;
+}
+
 export const api = {
   health: () => request<OkResponse>("/api/health"),
   status: () => request<EngineStatus>("/api/status"),
@@ -106,6 +125,30 @@ export const api = {
     request<RemoteListing>(
       `/api/remotes/${encodeURIComponent(id)}/browse?path=${encodeURIComponent(path)}`,
     ),
+
+  // Remote file-manager ops
+  mkdir: (id: string, path: string) =>
+    request<OkResponse>(`/api/remotes/${encodeURIComponent(id)}/ops/mkdir`, {
+      method: "POST",
+      json: { path },
+    }),
+  touch: (id: string, path: string) =>
+    request<OkResponse>(`/api/remotes/${encodeURIComponent(id)}/ops/touch`, {
+      method: "POST",
+      json: { path },
+    }),
+  deleteEntry: (id: string, path: string, isDir: boolean) =>
+    request<OkResponse>(`/api/remotes/${encodeURIComponent(id)}/ops/delete`, {
+      method: "POST",
+      json: { path, isDir },
+    }),
+  rename: (id: string, path: string, newName: string) =>
+    request<OkResponse>(`/api/remotes/${encodeURIComponent(id)}/ops/rename`, {
+      method: "POST",
+      json: { path, newName },
+    }),
+  transferOp: (payload: TransferOpInput) =>
+    request<OkResponse>("/api/transfer-op", { method: "POST", json: payload }),
 
   // Local filesystem browser (for the Local remote directory picker)
   browseFs: (path?: string) =>

@@ -1,34 +1,75 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownAZ,
   ArrowUpAZ,
   ChevronRight,
+  Clipboard,
+  Copy,
+  Download,
+  Eye,
+  FilePlus,
+  FolderPlus,
   HardDrive,
   Home,
   LayoutGrid,
   List as ListIcon,
   Loader2,
+  Pencil,
   RotateCw,
+  Scissors,
   Search,
+  Trash2,
+  X,
 } from "lucide-react";
 import type { RemoteEntry } from "@drivehub/types";
-import { useBrowse, useRemotes } from "@/hooks/queries";
+import { useBrowse, useBrowseMutations, useRemotes } from "@/hooks/queries";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SimpleSelect } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { QueryError } from "@/components/query-error";
 import { EmptyState } from "@/components/empty-state";
 import { RemoteIcon } from "@/components/brand-icon";
+import { NamePromptDialog } from "@/components/name-prompt-dialog";
+import { FilePreviewDialog } from "@/components/file-preview-dialog";
 import { entryIcon } from "@/lib/file-icons";
 import { remoteTypeLabel } from "@/lib/remotes";
 import { cn, formatBytes, formatRelativeTime } from "@/lib/utils";
-import type { ApiError } from "@/lib/api";
+import { fileUrl, type ApiError, type TransferOpInput } from "@/lib/api";
+import { useClipboardStore } from "@/store/clipboard";
 
 type SortKey = "name" | "size" | "modified";
 type SortDir = "asc" | "desc";
 type ViewMode = "list" | "grid";
+
+/**
+ * INTERACTION MODEL (select vs open)
+ * ----------------------------------
+ * A leading checkbox column owns selection. Clicking a row's blank area or its
+ * checkbox SELECTS (plain = single, Cmd/Ctrl = toggle, Shift = range). To OPEN,
+ * you act on the name itself: clicking a folder name navigates into it; clicking
+ * a file name opens the preview. The trailing chevron on folders also opens, and
+ * double-clicking a row opens (navigate folder / preview file) as a discoverable
+ * shortcut. This way navigation and multi-select never fight. Esc clears the
+ * selection (or closes the preview). Right-click opens a context menu of actions.
+ * Grid view mirrors this: the tile is a selection target, the name/icon opens.
+ */
 
 export function BrowserPage() {
   const { data: remotes, isLoading: remotesLoading } = useRemotes();
@@ -45,7 +86,7 @@ export function BrowserPage() {
     <div className="flex h-full min-h-[32rem] flex-col gap-6">
       <PageHeader
         title="Remote Browser"
-        description="Inspect the contents of any connected remote."
+        description="Browse, organize, and manage files on any connected remote."
       />
 
       {remotesLoading ? (
@@ -100,19 +141,33 @@ function FileManager({
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [view, setView] = useState<ViewMode>("list");
 
+  // Selection state — set of entry paths, plus an anchor for shift-range.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [anchor, setAnchor] = useState<string | null>(null);
+
+  // Dialog state.
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [newFileOpen, setNewFileOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<RemoteEntry | null>(null);
+  const [deleteTargets, setDeleteTargets] = useState<RemoteEntry[] | null>(null);
+  const [previewEntry, setPreviewEntry] = useState<RemoteEntry | null>(null);
+
   const { data, isLoading, isError, error, refetch, isFetching } = useBrowse(
     remoteId,
     path,
   );
+  const ops = useBrowseMutations(remoteId, path);
+  const clipboard = useClipboardStore();
 
   const breadcrumbs = data?.breadcrumbs ?? [];
+  const entries = data?.entries ?? [];
 
   const go = (next: string) => {
     setPath(next);
     setQuery("");
+    setSelected(new Set());
+    setAnchor(null);
   };
-
-  const entries = data?.entries ?? [];
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -142,8 +197,144 @@ function FileManager({
     return filtered;
   }, [entries, query, sortKey, sortDir]);
 
+  // --- Selection helpers ----------------------------------------------------
+
+  const byPath = useMemo(() => {
+    const m = new Map<string, RemoteEntry>();
+    for (const e of entries) m.set(e.path, e);
+    return m;
+  }, [entries]);
+
+  const selectedEntries = useMemo(
+    () =>
+      [...selected]
+        .map((p) => byPath.get(p))
+        .filter((e): e is RemoteEntry => !!e),
+    [selected, byPath],
+  );
+
+  const clearSelection = useCallback(() => {
+    setSelected(new Set());
+    setAnchor(null);
+  }, []);
+
+  const onRowSelect = useCallback(
+    (entry: RemoteEntry, e: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean }) => {
+      const path = entry.path;
+      if (e.shiftKey && anchor) {
+        const order = visible.map((v) => v.path);
+        const a = order.indexOf(anchor);
+        const b = order.indexOf(path);
+        if (a !== -1 && b !== -1) {
+          const [lo, hi] = a < b ? [a, b] : [b, a];
+          setSelected(new Set(order.slice(lo, hi + 1)));
+          return;
+        }
+      }
+      if (e.metaKey || e.ctrlKey) {
+        setSelected((prev) => {
+          const next = new Set(prev);
+          if (next.has(path)) next.delete(path);
+          else next.add(path);
+          return next;
+        });
+        setAnchor(path);
+        return;
+      }
+      // Plain click: select just this one.
+      setSelected(new Set([path]));
+      setAnchor(path);
+    },
+    [anchor, visible],
+  );
+
+  const toggleAll = useCallback(() => {
+    setSelected((prev) =>
+      prev.size === visible.length && visible.length > 0
+        ? new Set()
+        : new Set(visible.map((v) => v.path)),
+    );
+  }, [visible]);
+
+  // --- Open (navigate / preview) -------------------------------------------
+
+  const open = (entry: RemoteEntry) => {
+    if (entry.isDir) go(entry.path);
+    else setPreviewEntry(entry);
+  };
+
+  // --- Clipboard ops --------------------------------------------------------
+
+  const copyToClipboard = (entries: RemoteEntry[], op: "copy" | "cut") => {
+    if (entries.length === 0) return;
+    clipboard.set(
+      op,
+      remoteId,
+      entries.map((e) => ({ path: e.path, name: e.name, isDir: e.isDir })),
+    );
+  };
+
+  const paste = () => {
+    if (!clipboard.op || !clipboard.remoteId || clipboard.entries.length === 0)
+      return;
+    const op = clipboard.op === "cut" ? "move" : "copy";
+    const payload: TransferOpInput[] = clipboard.entries.map((e) => ({
+      srcRemoteId: clipboard.remoteId!,
+      srcPath: e.path,
+      dstRemoteId: remoteId,
+      dstPath: path ? `${path}/${e.name}` : e.name,
+      op,
+    }));
+    ops.paste.mutate(payload, {
+      onSuccess: () => {
+        // Cut consumes the clipboard; copy keeps it for repeat pastes.
+        if (clipboard.op === "cut") clipboard.clear();
+        clearSelection();
+      },
+    });
+  };
+
+  const downloadEntries = (entries: RemoteEntry[]) => {
+    for (const e of entries) {
+      if (e.isDir) continue;
+      const a = document.createElement("a");
+      a.href = fileUrl(remoteId, e.path, true);
+      a.download = e.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+  };
+
+  // --- Keyboard: Esc clears selection --------------------------------------
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !previewEntry) {
+        // Don't interfere with dialogs (they handle their own Esc).
+        if (newFolderOpen || newFileOpen || renameTarget || deleteTargets) return;
+        if (selected.size > 0) clearSelection();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [
+    selected.size,
+    clearSelection,
+    previewEntry,
+    newFolderOpen,
+    newFileOpen,
+    renameTarget,
+    deleteTargets,
+  ]);
+
   const folderCount = entries.filter((e) => e.isDir).length;
   const fileCount = entries.length - folderCount;
+  const allSelected = visible.length > 0 && selected.size === visible.length;
+  const someSelected = selected.size > 0 && !allSelected;
+  const selectedFiles = selectedEntries.filter((e) => !e.isDir);
+  const single = selectedEntries.length === 1 ? selectedEntries[0]! : null;
+  const clipboardCount = clipboard.entries.length;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-card">
@@ -183,6 +374,114 @@ function FileManager({
             >
               <RotateCw className={cn("size-4", isFetching && "animate-spin")} />
             </Button>
+          </div>
+        </div>
+
+        {/* Action bar */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setNewFolderOpen(true)}
+          >
+            <FolderPlus className="size-4" />
+            New folder
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setNewFileOpen(true)}>
+            <FilePlus className="size-4" />
+            New file
+          </Button>
+
+          <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
+
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!single}
+            onClick={() => single && setRenameTarget(single)}
+          >
+            <Pencil className="size-4" />
+            Rename
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={selectedEntries.length === 0}
+            onClick={() => copyToClipboard(selectedEntries, "copy")}
+          >
+            <Copy className="size-4" />
+            Copy
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={selectedEntries.length === 0}
+            onClick={() => copyToClipboard(selectedEntries, "cut")}
+          >
+            <Scissors className="size-4" />
+            Cut
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={clipboardCount === 0 || ops.paste.isPending}
+            onClick={paste}
+          >
+            {ops.paste.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Clipboard className="size-4" />
+            )}
+            Paste
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={selectedFiles.length === 0}
+            onClick={() => downloadEntries(selectedFiles)}
+          >
+            <Download className="size-4" />
+            Download
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-danger hover:bg-danger/10 hover:text-danger"
+            disabled={selectedEntries.length === 0}
+            onClick={() => setDeleteTargets(selectedEntries)}
+          >
+            <Trash2 className="size-4" />
+            Delete
+          </Button>
+
+          <div className="ml-auto flex items-center gap-2">
+            {clipboardCount > 0 && (
+              <span className="flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+                <Clipboard className="size-3.5" />
+                {clipboardCount} {clipboard.op === "cut" ? "cut" : "copied"}
+                <button
+                  onClick={() => clipboard.clear()}
+                  className="rounded p-0.5 hover:text-foreground"
+                  aria-label="Clear clipboard"
+                  title="Clear clipboard"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </span>
+            )}
+            {selected.size > 0 && (
+              <span className="flex items-center gap-1.5 rounded-md bg-accent-muted px-2 py-1 text-xs font-medium text-accent">
+                {selected.size} selected
+                <button
+                  onClick={clearSelection}
+                  className="rounded p-0.5 hover:text-accent/70"
+                  aria-label="Clear selection"
+                  title="Clear selection (Esc)"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </span>
+            )}
           </div>
         </div>
 
@@ -227,7 +526,7 @@ function FileManager({
           <EmptyState
             icon={entryIcon("", true)}
             title="This folder is empty"
-            description="There's nothing to show here yet."
+            description="Use New folder or New file to add something here."
             className="m-6 border-0 bg-transparent"
           />
         ) : visible.length === 0 ? (
@@ -238,9 +537,64 @@ function FileManager({
             className="m-6 border-0 bg-transparent"
           />
         ) : view === "list" ? (
-          <ListView entries={visible} onOpen={go} />
+          <ListView
+            entries={visible}
+            selected={selected}
+            allSelected={allSelected}
+            someSelected={someSelected}
+            onToggleAll={toggleAll}
+            onSelect={onRowSelect}
+            onOpen={open}
+            actions={(entry) => (
+              <RowMenu
+                entry={entry}
+                selectedEntries={selectedEntries}
+                clipboardCount={clipboardCount}
+                pastePending={ops.paste.isPending}
+                onOpen={open}
+                onRename={setRenameTarget}
+                onDelete={setDeleteTargets}
+                onCopy={(e) => copyToClipboard(e, "copy")}
+                onCut={(e) => copyToClipboard(e, "cut")}
+                onPaste={paste}
+                onDownload={downloadEntries}
+              />
+            )}
+            onContextMenuRow={(entry) => {
+              if (!selected.has(entry.path)) {
+                setSelected(new Set([entry.path]));
+                setAnchor(entry.path);
+              }
+            }}
+          />
         ) : (
-          <GridView entries={visible} onOpen={go} />
+          <GridView
+            entries={visible}
+            selected={selected}
+            onSelect={onRowSelect}
+            onOpen={open}
+            actions={(entry) => (
+              <RowMenu
+                entry={entry}
+                selectedEntries={selectedEntries}
+                clipboardCount={clipboardCount}
+                pastePending={ops.paste.isPending}
+                onOpen={open}
+                onRename={setRenameTarget}
+                onDelete={setDeleteTargets}
+                onCopy={(e) => copyToClipboard(e, "copy")}
+                onCut={(e) => copyToClipboard(e, "cut")}
+                onPaste={paste}
+                onDownload={downloadEntries}
+              />
+            )}
+            onContextMenuRow={(entry) => {
+              if (!selected.has(entry.path)) {
+                setSelected(new Set([entry.path]));
+                setAnchor(entry.path);
+              }
+            }}
+          />
         )}
       </div>
 
@@ -253,6 +607,72 @@ function FileManager({
           </span>
         )}
       </div>
+
+      {/* Dialogs */}
+      <NamePromptDialog
+        open={newFolderOpen}
+        onOpenChange={setNewFolderOpen}
+        title="New folder"
+        label="Folder name"
+        placeholder="Untitled folder"
+        confirmLabel="Create"
+        pending={ops.mkdir.isPending}
+        onConfirm={(name) =>
+          ops.mkdir.mutate(name, { onSuccess: () => setNewFolderOpen(false) })
+        }
+      />
+      <NamePromptDialog
+        open={newFileOpen}
+        onOpenChange={setNewFileOpen}
+        title="New file"
+        label="File name"
+        placeholder="untitled.txt"
+        confirmLabel="Create"
+        pending={ops.touch.isPending}
+        onConfirm={(name) =>
+          ops.touch.mutate(name, { onSuccess: () => setNewFileOpen(false) })
+        }
+      />
+      <NamePromptDialog
+        open={!!renameTarget}
+        onOpenChange={(o) => !o && setRenameTarget(null)}
+        title="Rename"
+        description={renameTarget ? `Renaming "${renameTarget.name}".` : undefined}
+        label="New name"
+        initialValue={renameTarget?.name ?? ""}
+        confirmLabel="Rename"
+        pending={ops.rename.isPending}
+        onConfirm={(newName) => {
+          if (!renameTarget) return;
+          ops.rename.mutate(
+            { entryPath: renameTarget.path, newName },
+            { onSuccess: () => setRenameTarget(null) },
+          );
+        }}
+      />
+      <DeleteDialog
+        targets={deleteTargets}
+        pending={ops.remove.isPending}
+        onCancel={() => setDeleteTargets(null)}
+        onConfirm={() => {
+          if (!deleteTargets) return;
+          ops.remove.mutate(
+            deleteTargets.map((e) => ({ path: e.path, isDir: e.isDir })),
+            {
+              onSuccess: () => {
+                setDeleteTargets(null);
+                clearSelection();
+              },
+            },
+          );
+        }}
+      />
+      <FilePreviewDialog
+        open={!!previewEntry}
+        onOpenChange={(o) => !o && setPreviewEntry(null)}
+        remoteId={remoteId}
+        entry={previewEntry}
+      />
     </div>
   );
 }
@@ -355,20 +775,128 @@ function ViewToggle({
   );
 }
 
+// --- Context menu (shared by list + grid rows) ------------------------------
+
+function RowMenu({
+  entry,
+  selectedEntries,
+  clipboardCount,
+  pastePending,
+  onOpen,
+  onRename,
+  onDelete,
+  onCopy,
+  onCut,
+  onPaste,
+  onDownload,
+}: {
+  entry: RemoteEntry;
+  selectedEntries: RemoteEntry[];
+  clipboardCount: number;
+  pastePending: boolean;
+  onOpen: (e: RemoteEntry) => void;
+  onRename: (e: RemoteEntry) => void;
+  onDelete: (e: RemoteEntry[]) => void;
+  onCopy: (e: RemoteEntry[]) => void;
+  onCut: (e: RemoteEntry[]) => void;
+  onPaste: () => void;
+  onDownload: (e: RemoteEntry[]) => void;
+}) {
+  // The menu acts on the multi-selection if the right-clicked row is part of
+  // it; otherwise it acts on just that row (and selects it for clarity).
+  const inSelection = selectedEntries.some((s) => s.path === entry.path);
+  const targets = inSelection && selectedEntries.length > 0 ? selectedEntries : [entry];
+  const multi = targets.length > 1;
+  const files = targets.filter((t) => !t.isDir);
+
+  return (
+    <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
+      {!multi && (
+        <ContextMenuItem onSelect={() => onOpen(entry)}>
+          {entry.isDir ? <Search /> : <Eye />}
+          {entry.isDir ? "Open" : "Preview"}
+        </ContextMenuItem>
+      )}
+      <ContextMenuItem
+        disabled={multi}
+        onSelect={() => !multi && onRename(entry)}
+      >
+        <Pencil />
+        Rename
+      </ContextMenuItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem onSelect={() => onCopy(targets)}>
+        <Copy />
+        Copy{multi ? ` (${targets.length})` : ""}
+      </ContextMenuItem>
+      <ContextMenuItem onSelect={() => onCut(targets)}>
+        <Scissors />
+        Cut{multi ? ` (${targets.length})` : ""}
+      </ContextMenuItem>
+      <ContextMenuItem
+        disabled={clipboardCount === 0 || pastePending}
+        onSelect={onPaste}
+      >
+        <Clipboard />
+        Paste{clipboardCount > 0 ? ` (${clipboardCount})` : ""}
+      </ContextMenuItem>
+      {files.length > 0 && (
+        <ContextMenuItem onSelect={() => onDownload(files)}>
+          <Download />
+          Download{files.length > 1 ? ` (${files.length})` : ""}
+        </ContextMenuItem>
+      )}
+      <ContextMenuSeparator />
+      <ContextMenuItem destructive onSelect={() => onDelete(targets)}>
+        <Trash2 />
+        Delete{multi ? ` (${targets.length})` : ""}
+      </ContextMenuItem>
+    </ContextMenuContent>
+  );
+}
+
 // --- Views ------------------------------------------------------------------
+
+interface RowEvent {
+  metaKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+}
 
 function ListView({
   entries,
+  selected,
+  allSelected,
+  someSelected,
+  onToggleAll,
+  onSelect,
   onOpen,
+  actions,
+  onContextMenuRow,
 }: {
   entries: RemoteEntry[];
-  onOpen: (path: string) => void;
+  selected: Set<string>;
+  allSelected: boolean;
+  someSelected: boolean;
+  onToggleAll: () => void;
+  onSelect: (entry: RemoteEntry, e: RowEvent) => void;
+  onOpen: (entry: RemoteEntry) => void;
+  actions: (entry: RemoteEntry) => React.ReactNode;
+  onContextMenuRow: (entry: RemoteEntry) => void;
 }) {
   return (
     <table className="w-full text-sm">
       <thead className="sticky top-0 z-[1] bg-card">
         <tr className="border-b border-border text-left text-xs font-medium text-muted-foreground">
-          <th className="px-4 py-2 font-medium">Name</th>
+          <th className="w-10 px-3 py-2">
+            <Checkbox
+              checked={allSelected}
+              indeterminate={someSelected}
+              onChange={onToggleAll}
+              aria-label="Select all"
+            />
+          </th>
+          <th className="px-2 py-2 font-medium">Name</th>
           <th className="hidden w-32 px-4 py-2 text-right font-medium sm:table-cell">
             Size
           </th>
@@ -381,46 +909,87 @@ function ListView({
         {entries.map((entry) => {
           const Icon = entryIcon(entry.name, entry.isDir, entry.mimeType);
           const isDir = entry.isDir;
+          const isSel = selected.has(entry.path);
           return (
-            <tr
-              key={entry.path}
-              onClick={() => isDir && onOpen(entry.path)}
-              className={cn(
-                "group border-b border-border/50 transition-colors",
-                isDir ? "cursor-pointer hover:bg-muted/60" : "hover:bg-muted/30",
-              )}
-            >
-              <td className="px-4 py-2.5">
-                <div className="flex items-center gap-2.5">
-                  <Icon
-                    className={cn(
-                      "size-4 shrink-0",
-                      isDir ? "text-accent" : "text-muted-foreground",
-                    )}
-                  />
-                  <span
-                    className={cn(
-                      "min-w-0 flex-1 truncate",
-                      isDir
-                        ? "font-medium text-foreground"
-                        : "text-foreground/90",
-                    )}
-                    title={entry.name}
-                  >
-                    {entry.name}
-                  </span>
-                  {isDir && (
-                    <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground/60" />
+            <ContextMenu key={entry.path}>
+              <ContextMenuTrigger asChild>
+                <tr
+                  onClick={(e) =>
+                    onSelect(entry, {
+                      metaKey: e.metaKey,
+                      ctrlKey: e.ctrlKey,
+                      shiftKey: e.shiftKey,
+                    })
+                  }
+                  onContextMenu={() => onContextMenuRow(entry)}
+                  onDoubleClick={() => onOpen(entry)}
+                  className={cn(
+                    "group cursor-pointer border-b border-border/50 transition-colors",
+                    isSel ? "bg-accent-muted/60" : "hover:bg-muted/40",
                   )}
-                </div>
-              </td>
-              <td className="hidden px-4 py-2.5 text-right text-xs text-muted-foreground tabular-nums sm:table-cell">
-                {isDir ? "" : formatBytes(entry.sizeBytes)}
-              </td>
-              <td className="hidden px-4 py-2.5 text-right text-xs text-muted-foreground md:table-cell">
-                {modifiedLabel(entry.modTime)}
-              </td>
-            </tr>
+                >
+                  <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={isSel}
+                      onChange={(_v, ev) =>
+                        onSelect(entry, {
+                          metaKey: ev.metaKey,
+                          ctrlKey: ev.ctrlKey,
+                          shiftKey: ev.shiftKey,
+                        })
+                      }
+                      aria-label={`Select ${entry.name}`}
+                    />
+                  </td>
+                  <td className="px-2 py-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <Icon
+                        className={cn(
+                          "size-4 shrink-0",
+                          isDir ? "text-accent" : "text-muted-foreground",
+                        )}
+                      />
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpen(entry);
+                        }}
+                        title={entry.name}
+                        className={cn(
+                          "min-w-0 flex-1 truncate text-left hover:underline",
+                          isDir
+                            ? "font-medium text-foreground"
+                            : "text-foreground/90",
+                        )}
+                      >
+                        {entry.name}
+                      </button>
+                      {isDir && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpen(entry);
+                          }}
+                          aria-label={`Open ${entry.name}`}
+                          className="shrink-0 rounded p-0.5 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground/70 hover:!text-foreground"
+                        >
+                          <ChevronRight className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                  <td className="hidden px-4 py-2.5 text-right text-xs text-muted-foreground tabular-nums sm:table-cell">
+                    {isDir ? "" : formatBytes(entry.sizeBytes)}
+                  </td>
+                  <td className="hidden px-4 py-2.5 text-right text-xs text-muted-foreground md:table-cell">
+                    {modifiedLabel(entry.modTime)}
+                  </td>
+                </tr>
+              </ContextMenuTrigger>
+              {actions(entry)}
+            </ContextMenu>
           );
         })}
       </tbody>
@@ -430,45 +999,154 @@ function ListView({
 
 function GridView({
   entries,
+  selected,
+  onSelect,
   onOpen,
+  actions,
+  onContextMenuRow,
 }: {
   entries: RemoteEntry[];
-  onOpen: (path: string) => void;
+  selected: Set<string>;
+  onSelect: (entry: RemoteEntry, e: RowEvent) => void;
+  onOpen: (entry: RemoteEntry) => void;
+  actions: (entry: RemoteEntry) => React.ReactNode;
+  onContextMenuRow: (entry: RemoteEntry) => void;
 }) {
   return (
     <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
       {entries.map((entry) => {
         const Icon = entryIcon(entry.name, entry.isDir, entry.mimeType);
         const isDir = entry.isDir;
+        const isSel = selected.has(entry.path);
         return (
-          <button
-            key={entry.path}
-            disabled={!isDir}
-            onClick={() => isDir && onOpen(entry.path)}
-            title={entry.name}
-            className={cn(
-              "flex flex-col items-center gap-2 rounded-lg border border-transparent p-4 text-center transition-colors",
-              isDir
-                ? "cursor-pointer hover:border-border hover:bg-muted/60"
-                : "cursor-default hover:bg-muted/30",
-            )}
-          >
-            <Icon
-              className={cn(
-                "size-9",
-                isDir ? "text-accent" : "text-muted-foreground",
-              )}
-            />
-            <span className="w-full truncate text-[13px] font-medium text-foreground">
-              {entry.name}
-            </span>
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {isDir ? "Folder" : formatBytes(entry.sizeBytes)}
-            </span>
-          </button>
+          <ContextMenu key={entry.path}>
+            <ContextMenuTrigger asChild>
+              <div
+                onClick={(e) =>
+                  onSelect(entry, {
+                    metaKey: e.metaKey,
+                    ctrlKey: e.ctrlKey,
+                    shiftKey: e.shiftKey,
+                  })
+                }
+                onContextMenu={() => onContextMenuRow(entry)}
+                onDoubleClick={() => onOpen(entry)}
+                title={entry.name}
+                className={cn(
+                  "flex cursor-pointer flex-col items-center gap-2 rounded-lg border p-4 text-center transition-colors",
+                  isSel
+                    ? "border-accent/40 bg-accent-muted/60"
+                    : "border-transparent hover:border-border hover:bg-muted/40",
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpen(entry);
+                  }}
+                  aria-label={isDir ? `Open ${entry.name}` : `Preview ${entry.name}`}
+                >
+                  <Icon
+                    className={cn(
+                      "size-9",
+                      isDir ? "text-accent" : "text-muted-foreground",
+                    )}
+                  />
+                </button>
+                <span className="w-full truncate text-[13px] font-medium text-foreground">
+                  {entry.name}
+                </span>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {isDir ? "Folder" : formatBytes(entry.sizeBytes)}
+                </span>
+              </div>
+            </ContextMenuTrigger>
+            {actions(entry)}
+          </ContextMenu>
         );
       })}
     </div>
+  );
+}
+
+// --- Checkbox (token-styled, supports indeterminate) ------------------------
+
+function Checkbox({
+  checked,
+  indeterminate,
+  onChange,
+  ...rest
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
+  onChange: (checked: boolean, event: RowEvent) => void;
+  "aria-label"?: string;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = !!indeterminate && !checked;
+  }, [indeterminate, checked]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={checked}
+      onChange={() => {}}
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange(!checked, {
+          metaKey: e.metaKey,
+          ctrlKey: e.ctrlKey,
+          shiftKey: e.shiftKey,
+        });
+      }}
+      className="size-4 shrink-0 cursor-pointer rounded border-input accent-accent"
+      {...rest}
+    />
+  );
+}
+
+// --- Delete confirm dialog --------------------------------------------------
+
+function DeleteDialog({
+  targets,
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  targets: RemoteEntry[] | null;
+  pending: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const count = targets?.length ?? 0;
+  const single = count === 1 ? targets![0]! : null;
+  const hasFolder = !!targets?.some((t) => t.isDir);
+  return (
+    <Dialog open={!!targets} onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>
+            {single ? `Delete "${single.name}"?` : `Delete ${count} items?`}
+          </DialogTitle>
+          <DialogDescription>
+            This permanently removes {single ? "it" : "them"} from the remote
+            {hasFolder ? ", including all folder contents" : ""}. This can't be
+            undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant="destructive" disabled={pending} onClick={onConfirm}>
+            {pending && <Loader2 className="size-4 animate-spin" />}
+            Delete{count > 1 ? ` ${count}` : ""}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -477,6 +1155,7 @@ function ListSkeleton() {
     <div className="divide-y divide-border/50">
       {Array.from({ length: 10 }).map((_, i) => (
         <div key={i} className="flex items-center gap-3 px-4 py-3">
+          <Skeleton className="size-4 shrink-0 rounded" />
           <Skeleton className="size-4 shrink-0 rounded" />
           <Skeleton
             className="h-4 rounded"

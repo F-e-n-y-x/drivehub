@@ -112,10 +112,10 @@ export const REMOTE_CATALOG: RemoteTypeInfo[] = [
     label: "iCloud Drive (experimental)",
     oauth: false,
     description:
-      "Connect iCloud Drive with an Apple ID and an app-specific password. Experimental — accounts with Advanced Data Protection are not supported, and 2FA can interrupt sign-in.",
+      "Experimental. iCloud requires your primary Apple ID password AND an interactive 2FA code, which this quick form can't complete — so it will likely fail. Use the two-step connect (coming soon) or a more reliable backend (S3/B2). Advanced Data Protection accounts are not supported.",
     fields: [
       { key: "apple_id", label: "Apple ID", type: "text", required: true, placeholder: "you@icloud.com" },
-      { key: "password", label: "App-specific password", type: "password", required: true, help: "Create one at appleid.apple.com → Sign-In and Security → App-Specific Passwords." },
+      { key: "password", label: "Apple ID password", type: "password", required: true, help: "Your primary Apple ID password (NOT an app-specific password — those are rejected by iCloud Drive). A 2FA code is also required, which this form cannot submit yet." },
     ],
   },
 ];
