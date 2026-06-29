@@ -1,5 +1,6 @@
+import os from "node:os";
 import path from "node:path";
-import type { AppStats, EngineStatus } from "@drivehub/types";
+import type { AppStats, EngineStatus, SystemInfo } from "@drivehub/types";
 import type { AppConfig } from "./config.js";
 import type { DB } from "./db/index.js";
 import { Repo } from "./db/repo.js";
@@ -119,6 +120,25 @@ export class Orchestrator {
       runningJobs: this.runner.anyRunning(),
       lastErrorAt: this.repo.lastErrorAt(),
       bytesTransferredSession: this.runner.sessionTransferred(),
+    };
+  }
+
+  async systemInfo(): Promise<SystemInfo> {
+    return {
+      appVersion: APP_VERSION,
+      rcloneVersion: this.rcloneVersion ?? (await this.rclone.version()),
+      rcloneAvailable: this.rcloneVersion !== null,
+      node: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      hostname: os.hostname(),
+      cpus: os.cpus().length,
+      totalMemBytes: os.totalmem(),
+      dockerAvailable: this.quiescer.available(),
+      dataDir: this.config.DATA_DIR,
+      hubPath: this.config.HUB_PATH,
+      uptimeSeconds: Math.floor(process.uptime()),
+      serverTime: Date.now(),
     };
   }
 

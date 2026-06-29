@@ -4,6 +4,7 @@ import { Loader2, Save } from "lucide-react";
 import type { AppSettings } from "@drivehub/types";
 import { useSettings, useSaveSettings } from "@/hooks/queries";
 import { UpdatesSection } from "@/components/settings/updates-section";
+import { SystemSection } from "@/components/settings/system-section";
 import { useUIStore, type ThemePreference } from "@/store/ui";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -213,6 +214,8 @@ export function SettingsPage() {
       </Card>
 
       <UpdatesSection />
+
+      <SystemSection />
     </form>
   );
 }

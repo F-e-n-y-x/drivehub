@@ -107,17 +107,24 @@ function normalize(v: string | null): string | null {
   return m ? m[0].replace(/^v/, "") : v.trim();
 }
 
-/** True if `latest` is strictly newer than `current` (semver-ish). */
+function parseSemver(v: string | null): [number, number, number] | null {
+  if (!v) return null;
+  const m = v.match(/^(\d+)\.(\d+)\.(\d+)$/);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+/**
+ * True only if BOTH sides are real X.Y.Z versions and `latest` is strictly
+ * greater. If `current` isn't a released version (e.g. a "main"/SHA dev build),
+ * we never claim an update — avoids false positives on freshly-pulled images.
+ */
 function isNewer(latest: string | null, current: string | null): boolean {
-  if (!latest || !current) return false;
-  const a = latest.split(".").map((n) => parseInt(n, 10));
-  const b = current.split(".").map((n) => parseInt(n, 10));
-  if (a.some(Number.isNaN) || b.some(Number.isNaN)) return latest !== current;
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    const x = a[i] ?? 0;
-    const y = b[i] ?? 0;
-    if (x > y) return true;
-    if (x < y) return false;
+  const a = parseSemver(latest);
+  const b = parseSemver(current);
+  if (!a || !b) return false;
+  for (let i = 0; i < 3; i++) {
+    if (a[i]! > b[i]!) return true;
+    if (a[i]! < b[i]!) return false;
   }
   return false;
 }

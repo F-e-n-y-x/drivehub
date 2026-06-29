@@ -10,6 +10,7 @@ import type {
   RemotePublic,
   RemoteType,
   RemoteTypeInfo,
+  SystemInfo,
   UpdateStatus,
 } from "@drivehub/types";
 
@@ -143,6 +144,9 @@ export const api = {
       "/api/updates/rclone",
       { method: "POST" },
     ),
+
+  // System info (About / diagnostics)
+  getSystem: () => request<SystemInfo>("/api/system"),
 };
 
 /** Centralized query keys so SSE handlers and components stay in sync. */
@@ -158,4 +162,5 @@ export const qk = {
     ["browse", remoteId, path] as const,
   activity: (search: string) => ["activity", search] as const,
   updates: ["updates"] as const,
+  system: ["system"] as const,
 };

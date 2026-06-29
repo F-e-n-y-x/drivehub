@@ -263,6 +263,27 @@ export interface UpdateStatus {
 }
 
 // ---------------------------------------------------------------------------
+// System info (About / diagnostics)
+// ---------------------------------------------------------------------------
+
+export interface SystemInfo {
+  appVersion: string;
+  rcloneVersion: string | null;
+  rcloneAvailable: boolean;
+  node: string;
+  platform: string;
+  arch: string;
+  hostname: string;
+  cpus: number;
+  totalMemBytes: number;
+  dockerAvailable: boolean;
+  dataDir: string;
+  hubPath: string;
+  uptimeSeconds: number;
+  serverTime: number;
+}
+
+// ---------------------------------------------------------------------------
 // REST helpers
 // ---------------------------------------------------------------------------
 

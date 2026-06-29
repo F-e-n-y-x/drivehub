@@ -75,6 +75,15 @@ export function useUpdates() {
   });
 }
 
+export function useSystem() {
+  return useQuery({
+    queryKey: qk.system,
+    queryFn: api.getSystem,
+    staleTime: 60_000,
+    refetchOnMount: true,
+  });
+}
+
 // --- Engine ---------------------------------------------------------------
 
 export function useEngineControl() {
