@@ -1,4 +1,9 @@
-# Google OAuth setup
+# Google OAuth setup (optional)
+
+> **Only needed for one-click Google Drive sign-in.** Every other backend —
+> Local/NAS/USB, S3, B2, WebDAV, SFTP — is configured directly in the web UI and
+> needs none of this. Dropbox and OneDrive can be added by pasting a token from
+> `rclone authorize "dropbox"` / `rclone authorize "onedrive"`.
 
 DriveHub connects to Google Drive using **your own** Google Cloud OAuth client.
 This keeps you in full control — no third-party servers ever see your data or
@@ -47,12 +52,12 @@ tokens. The one-time setup takes about 5 minutes.
 
    | Where you run DriveHub | Authorized redirect URI |
    |---|---|
-   | Local machine | `http://localhost:8080/api/auth/google/callback` |
-   | A server / domain | `https://drive.example.com/api/auth/google/callback` |
+   | Local machine | `http://localhost:8080/api/oauth/google/callback` |
+   | A server / domain | `https://drive.example.com/api/oauth/google/callback` |
 
    > This must match `PUBLIC_URL` in your `.env`. If `PUBLIC_URL` is
    > `https://drive.example.com`, the redirect URI is
-   > `https://drive.example.com/api/auth/google/callback`.
+   > `https://drive.example.com/api/oauth/google/callback`.
 
 6. Click **Create**. Copy the **Client ID** and **Client secret**.
 
@@ -84,7 +89,7 @@ Add the Google account to **Test users** (step 3.5). Testing-mode apps only allo
 listed test users.
 
 **"redirect_uri_mismatch"**
-The redirect URI in Google Cloud must match `<PUBLIC_URL>/api/auth/google/callback`
+The redirect URI in Google Cloud must match `<PUBLIC_URL>/api/oauth/google/callback`
 character-for-character (scheme, host, port, path). Update whichever is wrong.
 
 **"Google did not return a refresh token"**

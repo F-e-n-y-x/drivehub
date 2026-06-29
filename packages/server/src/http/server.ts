@@ -6,51 +6,76 @@ import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { nanoid } from "nanoid";
 import { z } from "zod";
-import type {
-  AppSettings,
-  DriveListing,
-  DriveNode,
-  RemoteState,
-} from "@drivehub/types";
+import type { AppSettings, RemoteType } from "@drivehub/types";
 import type { AppConfig } from "../config.js";
-import { encryptSecret } from "../crypto.js";
-import { toAccountPublic } from "../db/repo.js";
+import { toJobPublic, toJobRun } from "../db/repo.js";
 import type { Logger } from "../logger.js";
-import type { SyncEngine } from "../engine/engine.js";
-import { authUrl, exchangeCode } from "../google/oauth.js";
+import type { Orchestrator } from "../orchestrator.js";
+import { authUrl, exchangeCodeForRclone } from "../google/oauth.js";
+
+const REMOTE_TYPES = ["local", "s3", "b2", "drive", "dropbox", "onedrive", "webdav", "sftp"] as const;
 
 const SettingsSchema = z.object({
-  pollIntervalMs: z.number().int().min(2000).max(600000),
   concurrency: z.number().int().min(1).max(32),
-  deletePropagation: z.boolean(),
-  ignorePatterns: z.array(z.string()),
+  excludePatterns: z.array(z.string()),
+  bandwidthLimit: z.string(),
   theme: z.enum(["light", "dark", "system"]),
 });
 
+const ScheduleSchema = z.object({
+  kind: z.enum(["realtime", "interval", "daily", "weekly", "manual"]),
+  intervalMinutes: z.number().int().min(1).optional(),
+  timeOfDay: z.string().optional(),
+  weekday: z.number().int().min(0).max(6).optional(),
+});
+
+const JobInputSchema = z.object({
+  name: z.string().min(1),
+  type: z.enum(["sync", "snapshot"]),
+  sourceRemoteId: z.string().min(1),
+  sourcePath: z.string().default(""),
+  destRemoteId: z.string().min(1),
+  destPath: z.string().default(""),
+  mode: z.enum(["two_way", "mirror", "additive"]),
+  schedule: ScheduleSchema,
+  enabled: z.boolean(),
+  snapshot: z.object({
+    retentionKeep: z.number().int().min(1).max(3650),
+    compressionLevel: z.number().int().min(0).max(9),
+  }),
+  quiesceContainers: z.array(z.string()),
+});
+
+const RemoteCreateSchema = z.object({
+  type: z.enum(REMOTE_TYPES),
+  label: z.string().min(1),
+  params: z.record(z.string()),
+});
+
+const OAuthTokenSchema = z.object({
+  type: z.enum(["drive", "dropbox", "onedrive"]),
+  label: z.string().min(1),
+  token: z.string().min(1),
+});
+
 const STATE_COOKIE = "dh_oauth_state";
+const LABEL_COOKIE = "dh_oauth_label";
 
-export function buildServer(config: AppConfig, engine: SyncEngine, logger: Logger) {
+export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logger) {
   const app = Fastify({ loggerInstance: logger });
-  const repo = engine.repo;
-
+  const repo = orch.repo;
   void app.register(cookie);
 
-  // ----- health ----------------------------------------------------------
+  // ----- health / status -------------------------------------------------
   app.get("/api/health", async () => ({ ok: true }));
+  app.get("/api/status", async () => orch.getStatus());
 
-  // ----- status / stats --------------------------------------------------
-  app.get("/api/status", async () => engine.getStatus());
-  app.get("/api/accounts", async () =>
-    repo.listAccounts().map(toAccountPublic),
-  );
-
-  // ----- engine controls -------------------------------------------------
   app.post("/api/engine/pause", async () => {
-    engine.pause();
+    orch.pause();
     return { ok: true };
   });
   app.post("/api/engine/resume", async () => {
-    engine.resume();
+    orch.resume();
     return { ok: true };
   });
 
@@ -58,170 +83,159 @@ export function buildServer(config: AppConfig, engine: SyncEngine, logger: Logge
   app.get("/api/settings", async () => repo.getSettings());
   app.put("/api/settings", async (req, reply) => {
     const parsed = SettingsSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ error: "bad_request", message: parsed.error.message });
-    }
-    engine.applySettings(parsed.data as AppSettings);
+    if (!parsed.success) return reply.code(400).send({ error: "bad_request", message: parsed.error.message });
+    repo.setSettings(parsed.data as AppSettings);
+    orch.broadcastStatus();
     return repo.getSettings();
   });
 
-  // ----- activity & conflicts -------------------------------------------
+  // ----- remotes ---------------------------------------------------------
+  app.get("/api/remotes/catalog", async () => orch.remotes.catalog());
+  app.get("/api/remotes", async () => orch.remotes.listPublic());
+
+  app.post("/api/remotes", async (req, reply) => {
+    const parsed = RemoteCreateSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "bad_request", message: parsed.error.message });
+    try {
+      const remote = await orch.remotes.create({
+        type: parsed.data.type as RemoteType,
+        label: parsed.data.label,
+        params: parsed.data.params,
+      });
+      orch.onRemotesChanged();
+      orch.bus.emit({ type: "remote", payload: remote });
+      return remote;
+    } catch (e) {
+      return reply.code(400).send({ error: "remote_create_failed", message: String((e as Error).message ?? e) });
+    }
+  });
+
+  // Create an OAuth remote by pasting a token from `rclone authorize`.
+  app.post("/api/remotes/oauth-token", async (req, reply) => {
+    const parsed = OAuthTokenSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "bad_request", message: parsed.error.message });
+    try {
+      const remote = await orch.remotes.createOAuth({
+        type: parsed.data.type as RemoteType,
+        label: parsed.data.label,
+        tokenJson: parsed.data.token,
+      });
+      orch.onRemotesChanged();
+      return remote;
+    } catch (e) {
+      return reply.code(400).send({ error: "remote_create_failed", message: String((e as Error).message ?? e) });
+    }
+  });
+
+  app.post("/api/remotes/:id/test", async (req) => {
+    const { id } = req.params as { id: string };
+    return orch.remotes.test(id);
+  });
+
+  app.delete("/api/remotes/:id", async (req) => {
+    const { id } = req.params as { id: string };
+    await orch.remotes.delete(id);
+    orch.onRemotesChanged();
+    return { ok: true };
+  });
+
+  app.get("/api/remotes/:id/browse", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const q = req.query as { path?: string };
+    try {
+      return await orch.remotes.browse(id, q.path ?? "");
+    } catch (e) {
+      return reply.code(400).send({ error: "browse_failed", message: String((e as Error).message ?? e) });
+    }
+  });
+
+  // ----- jobs ------------------------------------------------------------
+  app.get("/api/jobs", async () => repo.listJobs().map(toJobPublic));
+
+  app.post("/api/jobs", async (req, reply) => {
+    const parsed = JobInputSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "bad_request", message: parsed.error.message });
+    const row = repo.insertJob(parsed.data);
+    orch.onJobsChanged();
+    const job = toJobPublic(row);
+    orch.bus.emit({ type: "job", payload: job });
+    return job;
+  });
+
+  app.put("/api/jobs/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const parsed = JobInputSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "bad_request", message: parsed.error.message });
+    if (!repo.getJob(id)) return reply.code(404).send({ error: "not_found", message: "job" });
+    repo.updateJobConfig(id, parsed.data);
+    orch.onJobsChanged();
+    return toJobPublic(repo.getJob(id)!);
+  });
+
+  app.delete("/api/jobs/:id", async (req) => {
+    const { id } = req.params as { id: string };
+    repo.deleteJob(id);
+    orch.onJobsChanged();
+    return { ok: true };
+  });
+
+  app.post("/api/jobs/:id/run", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!repo.getJob(id)) return reply.code(404).send({ error: "not_found", message: "job" });
+    void orch.runJob(id); // fire and forget; progress streams over SSE
+    return { ok: true };
+  });
+
+  app.get("/api/jobs/:id/runs", async (req) => {
+    const { id } = req.params as { id: string };
+    return repo.listRuns(id, 50).map(toJobRun);
+  });
+
+  // ----- runs & activity -------------------------------------------------
+  app.get("/api/runs", async () => repo.recentRuns(50).map(toJobRun));
   app.get("/api/activity", async (req) => {
     const q = req.query as { limit?: string; search?: string };
     const limit = Math.min(Number(q.limit ?? 100) || 100, 500);
     return repo.recentActivity(limit, q.search);
   });
-  app.get("/api/conflicts", async () => repo.listConflicts(false));
-  app.post("/api/conflicts/:id/resolve", async (req) => {
-    const { id } = req.params as { id: string };
-    repo.resolveConflict(id);
-    return { ok: true };
-  });
 
-  // ----- OAuth -----------------------------------------------------------
-  app.get("/api/auth/google/start", async (_req, reply) => {
+  // ----- Google Drive OAuth bridge --------------------------------------
+  app.get("/api/oauth/google/start", async (req, reply) => {
+    if (!config.googleConfigured) {
+      return reply.redirect("/?error=google_not_configured");
+    }
+    const q = req.query as { label?: string };
     const state = nanoid(24);
-    reply.setCookie(STATE_COOKIE, state, {
-      httpOnly: true,
-      sameSite: "lax",
-      path: "/",
-      maxAge: 600,
-    });
+    reply.setCookie(STATE_COOKIE, state, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 600 });
+    reply.setCookie(LABEL_COOKIE, q.label ?? "Google Drive", { httpOnly: true, sameSite: "lax", path: "/", maxAge: 600 });
     return reply.redirect(authUrl(config, state));
   });
 
-  app.get("/api/auth/google/callback", async (req, reply) => {
+  app.get("/api/oauth/google/callback", async (req, reply) => {
     const q = req.query as { code?: string; state?: string; error?: string };
-    if (q.error) return reply.redirect(`/?error=${encodeURIComponent(q.error)}`);
-    const cookieState = req.cookies[STATE_COOKIE];
-    if (!q.code || !q.state || q.state !== cookieState) {
-      return reply.redirect("/?error=invalid_state");
+    if (q.error) return reply.redirect(`/remotes?error=${encodeURIComponent(q.error)}`);
+    if (!q.code || !q.state || q.state !== req.cookies[STATE_COOKIE]) {
+      return reply.redirect("/remotes?error=invalid_state");
     }
     try {
-      const identity = await exchangeCode(config, q.code);
-      const enc = encryptSecret(identity.refreshToken, config.TOKEN_ENCRYPTION_KEY);
-      const existing = repo.getAccountByEmail(identity.email);
-      if (existing) {
-        repo.updateAccount(existing.id, {
-          refreshTokenEnc: enc,
-          name: identity.name,
-          picture: identity.picture,
-          status: "active",
-        });
-      } else {
-        repo.insertAccount({
-          email: identity.email,
-          name: identity.name,
-          picture: identity.picture,
-          refreshTokenEnc: enc,
-          rootFolderId: "root",
-          rootFolderName: "My Drive",
-          startPageToken: null,
-          status: "active",
-          quotaUsed: null,
-          quotaTotal: null,
-          lastDeltaAt: null,
-          createdAt: Date.now(),
-        });
-      }
-      // Fetch quota/identity best-effort.
-      const account = repo.getAccountByEmail(identity.email)!;
-      try {
-        const about = await engine.registry.client(account.id).about();
-        repo.updateAccount(account.id, {
-          quotaUsed: about.quotaUsed,
-          quotaTotal: about.quotaTotal,
-          picture: about.picture ?? identity.picture,
-        });
-      } catch (e) {
-        logger.warn({ err: String(e) }, "about() failed after connect");
-      }
-      await engine.onAccountsChanged();
-      return reply.redirect(`/?connected=${encodeURIComponent(identity.email)}`);
-    } catch (err) {
-      logger.error({ err: String(err) }, "oauth callback failed");
-      return reply.redirect("/?error=oauth_failed");
-    }
-  });
-
-  // ----- accounts mgmt ---------------------------------------------------
-  app.delete("/api/accounts/:id", async (req) => {
-    const { id } = req.params as { id: string };
-    repo.deleteAccount(id);
-    await engine.onAccountsChanged();
-    return { ok: true };
-  });
-  app.post("/api/accounts/:id/pause", async (req) => {
-    const { id } = req.params as { id: string };
-    repo.updateAccount(id, { status: "paused" });
-    await engine.onAccountsChanged();
-    return { ok: true };
-  });
-  app.post("/api/accounts/:id/resume", async (req) => {
-    const { id } = req.params as { id: string };
-    repo.updateAccount(id, { status: "active" });
-    await engine.onAccountsChanged();
-    return { ok: true };
-  });
-
-  // ----- Drive viewer ----------------------------------------------------
-  app.get("/api/accounts/:id/drive", async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const q = req.query as { folderId?: string };
-    const account = repo.getAccount(id);
-    if (!account) return reply.code(404).send({ error: "not_found", message: "account" });
-
-    const client = engine.registry.client(id);
-    const folderId =
-      !q.folderId || q.folderId === "root"
-        ? await client.resolveRootId(account.rootFolderId)
-        : q.folderId;
-
-    const children = await client.listChildren(folderId);
-    const nodes: DriveNode[] = children
-      .map((f) => {
-        const remote = repo.findRemoteByDriveId(id, f.id);
-        return {
-          id: f.id,
-          name: f.name,
-          type: f.isFolder ? ("folder" as const) : ("file" as const),
-          mimeType: f.mimeType,
-          sizeBytes: f.size,
-          modifiedTime: f.modifiedTime,
-          syncState: (remote?.state as RemoteState) ?? ("unknown" as const),
-          iconLink: f.iconLink,
-        };
-      })
-      .sort((a, b) => {
-        if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
-        return a.name.localeCompare(b.name);
+      const conn = await exchangeCodeForRclone(config, q.code);
+      const label = req.cookies[LABEL_COOKIE] || conn.email || "Google Drive";
+      await orch.remotes.createOAuth({
+        type: "drive",
+        label,
+        tokenJson: conn.rcloneTokenJson,
+        extra: {
+          client_id: config.GOOGLE_CLIENT_ID ?? "",
+          client_secret: config.GOOGLE_CLIENT_SECRET ?? "",
+          scope: "drive",
+        },
       });
-
-    // Build breadcrumbs by walking parents up to the account root.
-    const rootId = await client.resolveRootId(account.rootFolderId);
-    const breadcrumbs: Array<{ id: string; name: string }> = [
-      { id: "root", name: account.rootFolderName ?? "My Drive" },
-    ];
-    if (folderId !== rootId) {
-      const chain: Array<{ id: string; name: string }> = [];
-      let cur = await client.getFile(folderId);
-      let guard = 0;
-      while (cur && guard++ < 50) {
-        chain.unshift({ id: cur.id, name: cur.name });
-        const parent = cur.parents[0];
-        if (!parent || parent === rootId || parent === "root") break;
-        cur = await client.getFile(parent);
-      }
-      breadcrumbs.push(...chain);
+      orch.onRemotesChanged();
+      return reply.redirect(`/remotes?connected=${encodeURIComponent(conn.email)}`);
+    } catch (err) {
+      logger.error({ err: String(err) }, "google oauth callback failed");
+      return reply.redirect("/remotes?error=oauth_failed");
     }
-
-    const listing: DriveListing = {
-      accountId: id,
-      folderId,
-      breadcrumbs,
-      nodes,
-    };
-    return listing;
   });
 
   // ----- SSE -------------------------------------------------------------
@@ -233,14 +247,12 @@ export function buildServer(config: AppConfig, engine: SyncEngine, logger: Logge
       "X-Accel-Buffering": "no",
     });
     reply.raw.write(`: connected\n\n`);
-    // Push an initial status snapshot.
-    reply.raw.write(`data: ${JSON.stringify({ type: "status", payload: engine.getStatus() })}\n\n`);
+    reply.raw.write(`data: ${JSON.stringify({ type: "status", payload: orch.getStatus() })}\n\n`);
 
-    const unsubscribe = engine.bus.subscribe((event) => {
+    const unsubscribe = orch.bus.subscribe((event) => {
       reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
     });
     const heartbeat = setInterval(() => reply.raw.write(`: ping\n\n`), 25000);
-
     req.raw.on("close", () => {
       clearInterval(heartbeat);
       unsubscribe();
@@ -259,10 +271,7 @@ export function buildServer(config: AppConfig, engine: SyncEngine, logger: Logge
     });
   } else {
     logger.warn("web build not found; serving API only");
-    app.get("/", async () => ({
-      ok: true,
-      message: "DriveHub API is running. Build the web UI to serve the dashboard.",
-    }));
+    app.get("/", async () => ({ ok: true, message: "DriveHub API is running." }));
   }
 
   return app;
@@ -272,9 +281,9 @@ function resolveWebDist(): string | null {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const candidates = [
     process.env.WEB_DIST,
-    path.resolve(here, "../../web/dist"), // dev: packages/server/dist -> packages/web/dist
+    path.resolve(here, "../../web/dist"),
     path.resolve(here, "../../../web/dist"),
-    "/app/web", // docker image layout
+    "/app/web",
   ].filter(Boolean) as string[];
   for (const c of candidates) {
     if (existsSync(path.join(c, "index.html"))) return c;

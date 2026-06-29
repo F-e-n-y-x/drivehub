@@ -22,3 +22,25 @@ export function formatNumber(n: number | null | undefined): string {
   if (n === null || n === undefined) return "—";
   return new Intl.NumberFormat("en-US").format(n);
 }
+
+/** Human-readable duration between two epoch-ms timestamps. */
+export function formatDuration(
+  startMs: number,
+  endMs: number | null | undefined,
+): string {
+  if (!endMs) return "—";
+  const ms = Math.max(0, endMs - startMs);
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  if (m < 60) return rem ? `${m}m ${rem}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m`;
+}
+
+/** Transfer rate, e.g. 1048576 -> "1.0 MB/s". */
+export function formatSpeed(bytesPerSec: number | null | undefined): string {
+  if (!bytesPerSec) return "0 B/s";
+  return `${formatBytes(bytesPerSec)}/s`;
+}

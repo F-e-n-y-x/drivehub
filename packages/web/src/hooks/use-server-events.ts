@@ -2,17 +2,19 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type {
   ActivityEvent,
-  ConflictRecord,
   EngineStatus,
+  JobPublic,
   ServerEvent,
 } from "@drivehub/types";
 import { qk } from "@/lib/api";
+import { useProgressStore } from "@/store/progress";
 
 export type ConnectionState = "connecting" | "open" | "closed";
 
 /**
  * Subscribes to the backend SSE stream and reconciles incoming events into the
- * TanStack Query cache so the whole UI stays live without manual refetches.
+ * TanStack Query cache (and the live progress store) so the whole UI stays
+ * live without manual refetches.
  */
 export function useServerEvents(): ConnectionState {
   const queryClient = useQueryClient();
@@ -39,13 +41,6 @@ export function useServerEvents(): ConnectionState {
           queryClient.setQueryData<EngineStatus>(qk.status, event.payload);
           break;
         }
-        case "stats": {
-          const stats = event.payload;
-          queryClient.setQueryData<EngineStatus>(qk.status, (prev) =>
-            prev ? { ...prev, stats } : prev,
-          );
-          break;
-        }
         case "activity": {
           const ev = event.payload;
           // Prepend to every cached activity query (across search variants).
@@ -57,44 +52,34 @@ export function useServerEvents(): ConnectionState {
                 prev ? [ev, ...prev].slice(0, 200) : [ev],
               );
             });
-          // Bump lastActivityAt on stats.
-          queryClient.setQueryData<EngineStatus>(qk.status, (prev) =>
-            prev
-              ? {
-                  ...prev,
-                  stats: { ...prev.stats, lastActivityAt: ev.at },
-                }
-              : prev,
-          );
           break;
         }
-        case "account": {
-          const account = event.payload;
-          queryClient.setQueryData<EngineStatus>(qk.status, (prev) =>
-            prev
-              ? {
-                  ...prev,
-                  accounts: prev.accounts.map((a) =>
-                    a.id === account.id ? account : a,
-                  ),
-                }
-              : prev,
-          );
-          queryClient.invalidateQueries({ queryKey: qk.accounts });
+        case "remote": {
+          queryClient.invalidateQueries({ queryKey: qk.remotes });
           break;
         }
-        case "conflict": {
-          const conflict: ConflictRecord = event.payload;
-          queryClient.setQueryData<ConflictRecord[]>(qk.conflicts, (prev) => {
-            if (!prev) return [conflict];
-            const idx = prev.findIndex((c) => c.id === conflict.id);
+        case "job": {
+          const job = event.payload;
+          queryClient.setQueryData<JobPublic[]>(qk.jobs, (prev) => {
+            if (!prev) return [job];
+            const idx = prev.findIndex((j) => j.id === job.id);
             if (idx >= 0) {
               const next = prev.slice();
-              next[idx] = conflict;
+              next[idx] = job;
               return next;
             }
-            return [conflict, ...prev];
+            return [...prev, job];
           });
+          break;
+        }
+        case "run": {
+          const run = event.payload;
+          queryClient.invalidateQueries({ queryKey: qk.runs });
+          queryClient.invalidateQueries({ queryKey: qk.jobRuns(run.jobId) });
+          break;
+        }
+        case "progress": {
+          useProgressStore.getState().set(event.payload);
           break;
         }
       }

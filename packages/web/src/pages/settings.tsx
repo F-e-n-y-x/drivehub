@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Loader2, Save, ShieldAlert } from "lucide-react";
+import { Loader2, Save } from "lucide-react";
 import type { AppSettings } from "@drivehub/types";
-import { useSettings, useStatus, useSaveSettings } from "@/hooks/queries";
+import { useSettings, useSaveSettings } from "@/hooks/queries";
 import { useUIStore, type ThemePreference } from "@/store/ui";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -13,12 +13,11 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { QueryError } from "@/components/query-error";
 import { cn } from "@/lib/utils";
 
-function Field({
+function Row({
   label,
   description,
   children,
@@ -50,7 +49,6 @@ const themeOptions: { value: ThemePreference; label: string }[] = [
 
 export function SettingsPage() {
   const { data: settings, isLoading, isError, refetch } = useSettings();
-  const { data: status } = useStatus();
   const save = useSaveSettings();
   const setTheme = useUIStore((s) => s.setTheme);
 
@@ -76,8 +74,6 @@ export function SettingsPage() {
   const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) =>
     setForm((f) => (f ? { ...f, [key]: value } : f));
 
-  const pollSeconds = Math.round(form.pollIntervalMs / 1000);
-
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (form) save.mutate(form);
@@ -102,94 +98,52 @@ export function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Sync engine</CardTitle>
+          <CardTitle>Transfers</CardTitle>
           <CardDescription>
-            Core polling and throughput behavior.
+            Throughput limits applied to every rclone job.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <Field
-            label="Poll interval"
-            description="How often DriveHub checks each account for remote changes."
-          >
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
-                min={1}
-                value={pollSeconds}
-                onChange={(e) =>
-                  update(
-                    "pollIntervalMs",
-                    Math.max(1, Number(e.target.value) || 1) * 1000,
-                  )
-                }
-                className="w-28"
-              />
-              <span className="text-sm text-muted-foreground">seconds</span>
-            </div>
-          </Field>
-
-          <div className="h-px bg-border" />
-
-          <Field
+          <Row
             label="Concurrency"
             description="Maximum number of file transfers running in parallel."
           >
             <Input
               type="number"
               min={1}
-              max={32}
+              max={64}
               value={form.concurrency}
               onChange={(e) =>
                 update(
                   "concurrency",
-                  Math.min(32, Math.max(1, Number(e.target.value) || 1)),
+                  Math.min(64, Math.max(1, Number(e.target.value) || 1)),
                 )
               }
               className="w-28"
             />
-          </Field>
-        </CardContent>
-      </Card>
+          </Row>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Safety</CardTitle>
-          <CardDescription>
-            Controls that affect whether deletions propagate.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <Field
-            label="Delete propagation"
-            description="When on, deleting a file on one side deletes it everywhere. When off, deletions are never mirrored — safer, but the hub may keep files you removed remotely."
+          <div className="h-px bg-border" />
+
+          <Row
+            label="Bandwidth limit"
+            description="rclone --bwlimit syntax, e.g. 10M for 10 MiB/s. Leave empty for unlimited."
           >
-            <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-3">
-              <Switch
-                checked={form.deletePropagation}
-                onCheckedChange={(v) => update("deletePropagation", v)}
-              />
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-foreground">
-                  {form.deletePropagation ? "Enabled" : "Disabled"}
-                </p>
-                {form.deletePropagation && (
-                  <p className="flex items-start gap-1.5 text-xs text-pending">
-                    <ShieldAlert className="mt-px size-3.5 shrink-0" />
-                    Deletions will be mirrored across all synced locations.
-                  </p>
-                )}
-              </div>
-            </div>
-          </Field>
+            <Input
+              value={form.bandwidthLimit}
+              onChange={(e) => update("bandwidthLimit", e.target.value)}
+              placeholder="unlimited"
+              className="w-40 font-mono"
+            />
+          </Row>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Ignore patterns</CardTitle>
+          <CardTitle>Exclude patterns</CardTitle>
           <CardDescription>
-            One glob per line. Matching paths are never synced (e.g.{" "}
+            One glob per line, applied to every job (e.g.{" "}
             <code className="rounded bg-muted px-1 py-0.5 text-[11px]">
               **/node_modules/**
             </code>
@@ -198,10 +152,10 @@ export function SettingsPage() {
         </CardHeader>
         <CardContent>
           <Textarea
-            value={form.ignorePatterns.join("\n")}
+            value={form.excludePatterns.join("\n")}
             onChange={(e) =>
               update(
-                "ignorePatterns",
+                "excludePatterns",
                 e.target.value
                   .split("\n")
                   .map((s) => s.trim())
@@ -222,7 +176,7 @@ export function SettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Field label="Theme">
+          <Row label="Theme">
             <div className="inline-flex w-full rounded-lg border border-border bg-muted/40 p-0.5">
               {themeOptions.map((opt) => (
                 <button
@@ -243,23 +197,7 @@ export function SettingsPage() {
                 </button>
               ))}
             </div>
-          </Field>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Hub folder</CardTitle>
-          <CardDescription>
-            The local directory DriveHub mirrors everything into (read-only).
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Input
-            readOnly
-            value={status?.hubPath ?? "Loading…"}
-            className="cursor-default font-mono text-xs text-muted-foreground"
-          />
+          </Row>
         </CardContent>
       </Card>
     </form>

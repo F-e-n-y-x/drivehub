@@ -4,9 +4,9 @@ import type { AppConfig } from "../config.js";
 type OAuth2Client = Auth.OAuth2Client;
 
 /**
- * Google OAuth 2.0 helpers. We request offline access so we receive a refresh
- * token (stored encrypted) and can mint access tokens indefinitely without the
- * operator re-consenting.
+ * Google OAuth helper. In v2 its job is to obtain a token we can hand to
+ * rclone (which then owns the Drive connection). We request offline access so
+ * the token includes a refresh_token.
  */
 
 export const OAUTH_SCOPES = [
@@ -34,43 +34,46 @@ export function authUrl(config: AppConfig, state: string): string {
   });
 }
 
-export interface ConnectedIdentity {
+export interface DriveConnection {
   email: string;
   name: string | null;
-  picture: string | null;
-  refreshToken: string;
+  /** rclone-compatible token JSON string. */
+  rcloneTokenJson: string;
 }
 
-/** Exchange an authorization code for tokens and the user's identity. */
-export async function exchangeCode(
+/** Exchange an auth code and return the identity + an rclone token JSON. */
+export async function exchangeCodeForRclone(
   config: AppConfig,
   code: string,
-): Promise<ConnectedIdentity> {
+): Promise<DriveConnection> {
   const client = makeOAuthClient(config);
   const { tokens } = await client.getToken(code);
   if (!tokens.refresh_token) {
     throw new Error(
-      "Google did not return a refresh token. Revoke the app's access in your Google account and reconnect (we force prompt=consent to avoid this).",
+      "Google did not return a refresh token. Remove DriveHub at myaccount.google.com/permissions and reconnect.",
     );
   }
   client.setCredentials(tokens);
 
-  const oauth2 = google.oauth2({ version: "v2", auth: client });
-  const { data } = await oauth2.userinfo.get();
-  return {
-    email: data.email ?? "unknown",
-    name: data.name ?? null,
-    picture: data.picture ?? null,
-    refreshToken: tokens.refresh_token,
-  };
-}
+  let email = "google-account";
+  let name: string | null = null;
+  try {
+    const oauth2 = google.oauth2({ version: "v2", auth: client });
+    const { data } = await oauth2.userinfo.get();
+    email = data.email ?? email;
+    name = data.name ?? null;
+  } catch {
+    /* identity is best-effort */
+  }
 
-/** Build an authorized client for an account from its stored refresh token. */
-export function clientFromRefreshToken(
-  config: AppConfig,
-  refreshToken: string,
-): OAuth2Client {
-  const client = makeOAuthClient(config);
-  client.setCredentials({ refresh_token: refreshToken });
-  return client;
+  const rcloneTokenJson = JSON.stringify({
+    access_token: tokens.access_token,
+    token_type: tokens.token_type ?? "Bearer",
+    refresh_token: tokens.refresh_token,
+    expiry: tokens.expiry_date
+      ? new Date(tokens.expiry_date).toISOString()
+      : new Date(Date.now() + 3600_000).toISOString(),
+  });
+
+  return { email, name, rcloneTokenJson };
 }

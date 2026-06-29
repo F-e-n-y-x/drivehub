@@ -2,7 +2,8 @@ import { z } from "zod";
 
 /**
  * Environment configuration, validated once at startup with Zod.
- * Fail fast and loud if anything required is missing or malformed.
+ * In v2 the only hard requirement is an encryption key; cloud credentials are
+ * optional and only needed for the backends you actually use.
  */
 const EnvSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
@@ -10,29 +11,27 @@ const EnvSchema = z.object({
   // HTTP
   PORT: z.coerce.number().int().positive().default(8080),
   HOST: z.string().default("0.0.0.0"),
-  /** Public base URL the browser reaches this app at (used for OAuth redirect). */
+  /** Public URL the browser reaches this app at (used for OAuth redirects). */
   PUBLIC_URL: z.string().url().default("http://localhost:8080"),
 
-  // Paths (inside the container these are the mounted volumes)
-  HUB_PATH: z.string().default("/data/sync"),
+  // Paths (mounted volumes inside the container)
   DATA_DIR: z.string().default("/data/app"),
+  /** Default local folder, offered as a convenience "Local" remote. */
+  HUB_PATH: z.string().default("/data/sync"),
 
-  // Google OAuth
-  GOOGLE_CLIENT_ID: z.string().min(1, "GOOGLE_CLIENT_ID is required"),
-  GOOGLE_CLIENT_SECRET: z.string().min(1, "GOOGLE_CLIENT_SECRET is required"),
-
-  /** 32-byte key (base64 or hex) used to encrypt refresh tokens at rest. */
+  /** Required: encrypts remote credentials + tokens at rest (AES-256-GCM). */
   TOKEN_ENCRYPTION_KEY: z
     .string()
     .min(16, "TOKEN_ENCRYPTION_KEY must be set to a strong secret"),
 
-  // Engine defaults (overridable at runtime via settings)
-  POLL_INTERVAL_MS: z.coerce.number().int().min(2000).default(7000),
+  // Optional: only needed to connect Google Drive via one-click OAuth.
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+
+  /** Path to the rclone binary (defaults to "rclone" on PATH). */
+  RCLONE_BIN: z.string().optional(),
+
   CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
-  DELETE_PROPAGATION: z
-    .enum(["true", "false"])
-    .default("true")
-    .transform((v) => v === "true"),
 
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace"])
@@ -41,6 +40,7 @@ const EnvSchema = z.object({
 
 export type AppConfig = z.infer<typeof EnvSchema> & {
   oauthRedirectUri: string;
+  googleConfigured: boolean;
 };
 
 let cached: AppConfig | null = null;
@@ -57,15 +57,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const data = parsed.data;
   cached = {
     ...data,
-    oauthRedirectUri: new URL(
-      "/api/auth/google/callback",
-      data.PUBLIC_URL,
-    ).toString(),
+    oauthRedirectUri: new URL("/api/oauth/google/callback", data.PUBLIC_URL).toString(),
+    googleConfigured: Boolean(data.GOOGLE_CLIENT_ID && data.GOOGLE_CLIENT_SECRET),
   };
   return cached;
 }
 
-/** For tests: reset the cached config so a fresh env can be loaded. */
 export function resetConfigForTests(): void {
   cached = null;
 }

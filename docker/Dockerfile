@@ -47,11 +47,23 @@ ENV PUID=10001
 ENV PGID=10001
 WORKDIR /app
 
-# gosu lets the root entrypoint drop privileges after fixing mount permissions.
+# gosu drops privileges after the entrypoint fixes mount permissions.
+# rclone is the storage engine; unzip/ca-certificates are needed to fetch it.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends gosu \
+  && apt-get install -y --no-install-recommends gosu ca-certificates unzip curl \
   && rm -rf /var/lib/apt/lists/* \
-  && useradd --uid 10001 --create-home --shell /usr/sbin/nologin drivehub
+  && useradd --uid 10001 --create-home --shell /usr/sbin/nologin drivehub \
+  && ARCH="$(dpkg --print-architecture)" \
+  && case "$ARCH" in \
+       amd64) RCLONE_ARCH=amd64 ;; \
+       arm64) RCLONE_ARCH=arm64 ;; \
+       *) RCLONE_ARCH="$ARCH" ;; \
+     esac \
+  && curl -fsSL "https://downloads.rclone.org/rclone-current-linux-${RCLONE_ARCH}.zip" -o /tmp/rclone.zip \
+  && unzip -j /tmp/rclone.zip "*/rclone" -d /usr/local/bin \
+  && chmod +x /usr/local/bin/rclone \
+  && rm /tmp/rclone.zip \
+  && rclone version
 
 # Server runtime (code + pruned prod deps) and the built web assets.
 COPY --from=build /export/server/dist ./dist

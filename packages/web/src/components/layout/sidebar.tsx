@@ -2,7 +2,6 @@ import { NavLink } from "react-router-dom";
 import { PanelLeftClose, PanelLeft } from "lucide-react";
 import { navItems } from "./nav";
 import { useUIStore } from "@/store/ui";
-import { useConflicts } from "@/hooks/queries";
 import { cn } from "@/lib/utils";
 import { SimpleTooltip } from "@/components/ui/tooltip";
 
@@ -26,8 +25,6 @@ function Logo({ collapsed }: { collapsed: boolean }) {
 export function Sidebar() {
   const collapsed = useUIStore((s) => s.sidebarCollapsed);
   const toggle = useUIStore((s) => s.toggleSidebar);
-  const { data: conflicts } = useConflicts();
-  const unresolved = conflicts?.filter((c) => !c.resolved).length ?? 0;
 
   return (
     <aside
@@ -40,7 +37,6 @@ export function Sidebar() {
 
       <nav className="flex-1 space-y-0.5 px-2.5 py-2">
         {navItems.map((item) => {
-          const badgeCount = item.badge === "conflicts" ? unresolved : 0;
           const link = (
             <NavLink
               key={item.to}
@@ -66,14 +62,6 @@ export function Sidebar() {
                   />
                   <item.icon className="size-[18px] shrink-0" />
                   {!collapsed && <span className="flex-1">{item.label}</span>}
-                  {!collapsed && badgeCount > 0 && (
-                    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-conflict/15 px-1.5 text-[11px] font-semibold text-conflict tabular-nums">
-                      {badgeCount}
-                    </span>
-                  )}
-                  {collapsed && badgeCount > 0 && (
-                    <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-conflict" />
-                  )}
                 </>
               )}
             </NavLink>

@@ -18,8 +18,8 @@ export function ActivityPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Activity & Logs"
-        description="A searchable timeline of everything the sync engine has done."
+        title="Activity"
+        description="A searchable timeline of everything the engine has done."
       />
 
       <div className="relative max-w-md">
@@ -27,7 +27,7 @@ export function ActivityPage() {
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Search messages, paths, accounts…"
+          placeholder="Search messages, codes…"
           className="pl-9"
         />
         {isFetching && !isLoading && (

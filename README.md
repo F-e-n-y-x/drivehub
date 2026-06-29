@@ -2,7 +2,7 @@
 
 # DriveHub
 
-**Self-hosted, real-time, two-way sync between a local folder and your Google Drive accounts — with a premium web UI.**
+**Self-hosted, premium-UI backup & sync between any storage — local, NAS, S3, Backblaze B2, Google Drive, Dropbox, OneDrive, WebDAV, SFTP — powered by rclone.**
 
 [![CI](https://github.com/F-e-n-y-x/drivehub/actions/workflows/ci.yml/badge.svg)](https://github.com/F-e-n-y-x/drivehub/actions/workflows/ci.yml)
 [![Publish image](https://github.com/F-e-n-y-x/drivehub/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/F-e-n-y-x/drivehub/actions/workflows/docker-publish.yml)
@@ -13,112 +13,109 @@
 
 ---
 
-DriveHub watches a folder on your machine and keeps it in sync with **one or more
-Google Drive accounts** in real time — both directions. Drop a file in the folder
-and it appears in every connected Drive within seconds; edit it from Drive and the
-change flows back. It runs as a single Docker container and ships with a clean,
-minimalist dashboard, a Google Drive folder viewer, and safe-by-default conflict
-handling.
+DriveHub is a self-hosted web app that backs up and syncs your data between **any
+two storage endpoints**. Configure storage **Remotes**, then create **Jobs** that
+move data between them — on a schedule, in real time, or as versioned snapshots —
+all from a clean, minimalist dashboard. It bundles [rclone](https://rclone.org)
+as the transfer engine, so 70+ backends work out of the box.
 
-## Why DriveHub?
+## Concepts
 
-The usual options each miss something:
-
-| Tool | Gap |
-|---|---|
-| **rclone** | Powerful engine, but CLI-only — no real-time, no UI |
-| **RcloneView** | Desktop two-pane explorer, not a self-hosted web app |
-| **Insync / odrive** | Closed-source, freemium desktop apps |
-| **Nextcloud / Seafile / Syncthing** | *Replace* Drive instead of syncing *into* your real Google Drive |
-
-DriveHub is the missing piece: a **self-hosted web app** that mirrors a local
-folder into your **actual Google Drive** in real time.
-
-## How it works — Hub & Spoke
-
-The local folder is the **hub** (source of truth). Each connected Google account
-is a two-way **spoke**. A change anywhere flows into the hub and fans out to every
-other spoke, so all accounts converge to identical content.
-
-```
-   Local hub  <-->  Sync Engine  <-->  Google Drive (Account A)
-   /data/sync         (brain)     <-->  Google Drive (Account B)
-                                   <-->  Google Drive (Account C)
-```
-
-The engine compares three states for every path — **local now**, **last-synced**,
-and **remote now** — and converges them. Durability lives in SQLite, so a restart
-simply resumes from current state.
+- **Remote** — a storage endpoint: a **local folder / NAS / USB**, **S3 / MinIO /
+  Wasabi**, **Backblaze B2**, **Google Drive**, **Dropbox**, **OneDrive**,
+  **WebDAV / Nextcloud**, or **SFTP**.
+- **Job** — moves data from a **source** remote to a **destination** remote with a
+  **mode** and a **schedule**.
 
 ## Features
 
-- 🔄 **Real-time two-way sync** — instant local watcher + efficient Drive delta polling
-- 👥 **Multiple Google accounts** — connect as many as you like; all stay in sync
-- 🧭 **Drive folder viewer** — browse each account's Drive with per-file sync badges
-- 🛟 **Keep-both conflicts** — never lose data; divergent edits are saved side-by-side
-- 🗑️ **Safe deletes** — propagated as Drive *trash* (recoverable), or disable entirely
-- 🚦 **Pause/resume**, ignore patterns (`.gitignore`-style), tunable concurrency & poll rate
-- 🔐 **Encrypted tokens at rest** (AES-256-GCM), non-root container
-- 🌗 **Premium minimalist UI** — light/dark, live activity feed over SSE
-- 🐳 **One-command Docker deploy**
+- 🔌 **Many backends** — Local/NAS/USB, S3-compatible, B2, Google Drive, Dropbox,
+  OneDrive, WebDAV, SFTP (anything rclone supports).
+- 🔁 **Sync modes** — **mirror** (exact copy, incl. deletions), **additive**
+  (never deletes on the destination), **two-way** (bidirectional, conflict-aware).
+- ⏱️ **Schedules** — **real time** (watch a local folder), every N minutes,
+  daily, weekly, or manual.
+- 🗄️ **Snapshot backups** — versioned `tar.gz` archives with **retention** (keep
+  last N). The right way to back up live data like app databases.
+- 🧊 **Consistent snapshots** — optionally **pause Docker containers** during a
+  snapshot for DB-safe archives (mount the Docker socket).
+- 🧭 **Remote browser** — browse any remote's folders; pick paths visually.
+- 📊 **Live progress** — per-job transfer progress, speed and ETA over SSE; run
+  history; searchable activity log.
+- 🔐 **Encrypted credentials at rest** (AES-256-GCM); runs in Docker as a
+  configurable user (`PUID`/`PGID`).
+- 🌗 **Premium minimalist UI** — light/dark.
 
 ## Quick start
 
-> Prerequisites: Docker + a Google Cloud OAuth client. The OAuth client takes
-> ~5 minutes to set up — follow **[SETUP.md](SETUP.md)**.
+The pre-built image is on the GitHub Container Registry:
 
-The pre-built image is published to the GitHub Container Registry:
-
-**📦 [`ghcr.io/f-e-n-y-x/drivehub`](https://github.com/F-e-n-y-x/drivehub/pkgs/container/drivehub)** &nbsp;·&nbsp; tags: `latest`, `v0.1.0` &nbsp;·&nbsp; platforms: `linux/amd64`, `linux/arm64`
+**📦 [`ghcr.io/f-e-n-y-x/drivehub`](https://github.com/F-e-n-y-x/drivehub/pkgs/container/drivehub)** &nbsp;·&nbsp; `latest` &nbsp;·&nbsp; `linux/amd64`, `linux/arm64`
 
 ```bash
 docker pull ghcr.io/f-e-n-y-x/drivehub:latest
 ```
 
-### Option A — Docker Compose (recommended)
+### Docker Compose
 
 ```bash
 git clone https://github.com/F-e-n-y-x/drivehub.git
 cd drivehub
 cp .env.example .env
-# Edit .env: paste your GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET,
-# and set TOKEN_ENCRYPTION_KEY  (openssl rand -base64 32)
-docker compose up -d        # pulls ghcr.io/f-e-n-y-x/drivehub:latest
+# Set TOKEN_ENCRYPTION_KEY (openssl rand -base64 32) and PUBLIC_URL.
+docker compose up -d
 ```
 
-### Option B — `docker run` (just the image, no clone)
+Open <http://localhost:8080>, add a **Remote** (e.g. your Local folder + an S3
+bucket), then create a **Job** between them. That's it.
+
+> Only `TOKEN_ENCRYPTION_KEY` and `PUBLIC_URL` are required. Cloud credentials are
+> entered in the UI per remote. Google Drive's one-click sign-in additionally
+> needs `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` — see [SETUP.md](SETUP.md).
+> Dropbox/OneDrive accept a token from `rclone authorize` pasted in the UI.
+
+### `docker run`
 
 ```bash
 docker run -d --name drivehub \
   -p 8080:8080 \
-  -e GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com" \
-  -e GOOGLE_CLIENT_SECRET="your-client-secret" \
   -e TOKEN_ENCRYPTION_KEY="$(openssl rand -base64 32)" \
   -e PUBLIC_URL="http://localhost:8080" \
+  -e PUID=0 -e PGID=0 \
   -v "$PWD/sync-folder:/data/sync" \
   -v "$PWD/app-data:/data/app" \
   --restart unless-stopped \
   ghcr.io/f-e-n-y-x/drivehub:latest
 ```
 
-Then open <http://localhost:8080>, click **Connect Google Account**, and pick the
-folder mapping. Drop a file into `./sync-folder` and watch it sync.
+Backing up system data that's root-owned (e.g. CasaOS/ZimaOS `/DATA/AppData`)?
+Set `PUID=0`/`PGID=0` so the app can read it. For DB-consistent snapshots, also
+mount `-v /var/run/docker.sock:/var/run/docker.sock:ro` and list the containers
+to pause on the job.
+
+## Choosing the right job for the data
+
+| Data | Recommended |
+|---|---|
+| Documents, photos, media | **mirror** or **two-way**, schedule realtime/daily |
+| Offsite copy to cloud | **additive** to S3/B2 (never deletes), daily |
+| **Live app data / databases** (AppData) | **Snapshot** job, daily, keep 7+, optionally quiescing the containers |
+
+> Don't real-time-mirror live databases — copying a file mid-write isn't
+> restorable. Use a **snapshot** job; that's what it's for.
 
 ## Configuration
 
-All configuration is via environment variables — see **[.env.example](.env.example)**.
-The essentials:
+See [.env.example](.env.example). Essentials:
 
 | Variable | Required | Description |
 |---|:--:|---|
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | ✅ | OAuth client from Google Cloud |
-| `TOKEN_ENCRYPTION_KEY` | ✅ | Secret used to encrypt refresh tokens |
-| `PUBLIC_URL` | ✅* | Public URL of the app; the OAuth redirect host must match |
-| `POLL_INTERVAL_MS` | | Drive change-poll interval (default `7000`) |
-| `CONCURRENCY` | | Max parallel transfers (default `4`) |
-| `DELETE_PROPAGATION` | | `false` = additive-only (local deletes don't delete from Drive) |
-
-\* Defaults to `http://localhost:8080` for local use.
+| `TOKEN_ENCRYPTION_KEY` | ✅ | Encrypts stored remote credentials |
+| `PUBLIC_URL` | ✅ | URL you reach the app at (OAuth redirect host) |
+| `PUID` / `PGID` | | User the app runs as; `0` to back up root-owned data |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | | Only for Google Drive one-click sign-in |
+| `CONCURRENCY` | | Parallel transfers (default `4`) |
+| `RCLONE_BIN` | | Path to rclone (defaults to the bundled binary) |
 
 ## Development
 
@@ -126,46 +123,26 @@ The essentials:
 corepack enable
 pnpm install
 pnpm --filter @drivehub/types build
-pnpm dev          # runs server (8080) + web (5173, proxies /api) together
-pnpm test         # engine unit tests (reconciler matrix, conflict naming, crypto, ignore)
-pnpm build        # build all workspaces
+pnpm dev          # server (8080) + web (5173)
+pnpm test         # unit tests (reconcile schedule, crypto, ignore)
+pnpm build
 ```
 
-Monorepo layout:
+Monorepo: `packages/types` (shared contracts), `packages/server` (Fastify API +
+rclone engine + scheduler), `packages/web` (React + Vite + Tailwind UI).
+Requires the `rclone` binary on PATH for local runs (the Docker image bundles it).
 
-```
-packages/types     shared TypeScript contracts (server <-> web)
-packages/server    Fastify API + the sync engine
-packages/web       React + Vite + Tailwind dashboard
-docker/            Dockerfile
-docs/              design spec
-```
-
-## Architecture & design
-
-The full design — topology, the reconciler decision matrix, loop prevention,
-conflict handling, and the durable operation log — lives in
-[docs/superpowers/specs/2026-06-28-gdrive-realtime-sync-design.md](docs/superpowers/specs/2026-06-28-gdrive-realtime-sync-design.md).
-
-**Stack:** Node 22 · TypeScript · Fastify · Zod · Drizzle ORM + better-sqlite3 ·
-chokidar · googleapis · SSE · React · Vite · Tailwind v4 · shadcn-style UI ·
+**Stack:** Node 22 · TypeScript · Fastify · Zod · Drizzle + better-sqlite3 ·
+rclone · node-tar · SSE · React · Vite · Tailwind v4 · shadcn-style UI ·
 TanStack Query · Zustand.
 
-## Security notes
+## Security
 
-- Refresh tokens are encrypted at rest with AES-256-GCM; the key never leaves env.
-- The container runs as a non-root user.
-- For personal self-hosting, keep the Google OAuth app in **testing** mode with
-  yourself as a test user — no Google verification review needed.
-- Deletes move to Drive **trash** (recoverable). Set `DELETE_PROPAGATION=false`
-  for a purely additive backup.
-
-## Roadmap (Phase 2)
-
-Bandwidth throttling · per-account selective sub-folders · Drive revision/version
-history viewer · push-webhook real-time when a public URL exists · Prometheus
-`/metrics` · email/webhook alerts · PWA/mobile · optional client-side filename
-encryption.
+- Remote credentials/tokens are encrypted at rest (AES-256-GCM); the rclone
+  config is rebuilt from the encrypted store on startup.
+- The container fixes mount ownership then drops to `PUID:PGID` via gosu.
+- Mounting the Docker socket (for snapshot quiescing) grants control of the host
+  Docker — mount it read-only and only if you use that feature.
 
 ## License
 

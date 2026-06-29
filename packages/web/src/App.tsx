@@ -4,11 +4,11 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/toast";
 import { AppLayout } from "@/components/layout/app-layout";
-import { FirstRunGate } from "@/components/first-run-gate";
 import { DashboardPage } from "@/pages/dashboard";
-import { AccountsPage } from "@/pages/accounts";
-import { ViewerPage } from "@/pages/viewer";
-import { ConflictsPage } from "@/pages/conflicts";
+import { RemotesPage } from "@/pages/remotes";
+import { JobsPage } from "@/pages/jobs";
+import { JobRunsPage } from "@/pages/job-runs";
+import { BrowserPage } from "@/pages/browser";
 import { ActivityPage } from "@/pages/activity";
 import { SettingsPage } from "@/pages/settings";
 import { NotFoundPage } from "@/pages/not-found";
@@ -29,19 +29,18 @@ export function App() {
       <ThemeProvider>
         <TooltipProvider delayDuration={200}>
           <BrowserRouter>
-            <FirstRunGate>
-              <Routes>
-                <Route element={<AppLayout />}>
-                  <Route path="/" element={<DashboardPage />} />
-                  <Route path="/accounts" element={<AccountsPage />} />
-                  <Route path="/viewer" element={<ViewerPage />} />
-                  <Route path="/conflicts" element={<ConflictsPage />} />
-                  <Route path="/activity" element={<ActivityPage />} />
-                  <Route path="/settings" element={<SettingsPage />} />
-                  <Route path="*" element={<NotFoundPage />} />
-                </Route>
-              </Routes>
-            </FirstRunGate>
+            <Routes>
+              <Route element={<AppLayout />}>
+                <Route path="/" element={<DashboardPage />} />
+                <Route path="/remotes" element={<RemotesPage />} />
+                <Route path="/jobs" element={<JobsPage />} />
+                <Route path="/jobs/:id/runs" element={<JobRunsPage />} />
+                <Route path="/browser" element={<BrowserPage />} />
+                <Route path="/activity" element={<ActivityPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="*" element={<NotFoundPage />} />
+              </Route>
+            </Routes>
           </BrowserRouter>
           <Toaster />
         </TooltipProvider>

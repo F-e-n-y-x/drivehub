@@ -1,13 +1,14 @@
-# DriveHub — Portainer stack.
-# Paste into Portainer: Stacks -> Add stack -> Web editor, then edit the
-# REPLACE_... values and Deploy.
+# DriveHub — Portainer stack (v2, multi-backend backup/sync powered by rclone).
+# Paste into Portainer: Stacks -> Add stack -> Web editor, edit the REPLACE_...
+# values, then Deploy.
 #
 # Notes:
-#  * The image must be PUBLIC on GHCR, or add a Registry (GitHub username + PAT)
-#    in Portainer so it can pull a private image.
-#  * PUBLIC_URL must match how you reach the app, and the Google OAuth client's
-#    Authorized redirect URI must be <PUBLIC_URL>/api/auth/google/callback.
-#  * Change the sync-folder host path to a real path on your Docker host.
+#  * The image must be PUBLIC on GHCR, or add a Registry (GitHub user + PAT) in
+#    Portainer so it can pull a private image.
+#  * Only TOKEN_ENCRYPTION_KEY and PUBLIC_URL are required. Storage backends
+#    (Local/NAS/USB, S3, B2, Dropbox, OneDrive, WebDAV, SFTP) are added in the
+#    web UI. GOOGLE_* is only needed for one-click Google Drive sign-in.
+#  * Set PUID/PGID to 0 to back up root-owned data (e.g. system AppData).
 
 services:
   drivehub:
@@ -17,30 +18,27 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # --- REQUIRED: from your Google Cloud OAuth client (see SETUP.md) ---
-      GOOGLE_CLIENT_ID: "REPLACE_WITH_CLIENT_ID.apps.googleusercontent.com"
-      GOOGLE_CLIENT_SECRET: "REPLACE_WITH_CLIENT_SECRET"
-      # --- REQUIRED: any long random secret. Generate: openssl rand -base64 32
+      # --- REQUIRED: encrypts stored credentials. openssl rand -base64 32
       TOKEN_ENCRYPTION_KEY: "REPLACE_WITH_RANDOM_32B_SECRET"
-      # --- REQUIRED: the URL you open DriveHub at. MUST match the Google
-      #     redirect URI <PUBLIC_URL>/api/auth/google/callback ---
+      # --- REQUIRED: the URL you open DriveHub at.
       PUBLIC_URL: "http://localhost:8080"
-      # --- Permissions ---
-      # The user the app runs as. To back up ROOT-OWNED data (e.g. system
-      # AppData), set both to 0 so it can read everything and write its DB.
-      # Otherwise set them to the uid:gid that owns your data.
+      # --- OPTIONAL: only for one-click Google Drive (see SETUP.md). Redirect
+      #     URI in Google = <PUBLIC_URL>/api/oauth/google/callback
+      GOOGLE_CLIENT_ID: ""
+      GOOGLE_CLIENT_SECRET: ""
+      # --- Permissions: 0 = run as root (read root-owned data, write DB) ---
       PUID: "0"
       PGID: "0"
       # --- Optional tuning ---
-      POLL_INTERVAL_MS: "7000"
       CONCURRENCY: "4"
-      DELETE_PROPAGATION: "true"
       LOG_LEVEL: "info"
     volumes:
-      # The local folder to sync. Change the LEFT side to a real host path.
-      - /opt/drivehub/sync-folder:/data/sync
-      # App data (SQLite DB + encrypted tokens) — keep as a named volume.
-      - drivehub-data:/data/app
-
-volumes:
-  drivehub-data:
+      # A local folder exposed as the default "Local" remote. Mount more for
+      # more sources, e.g. /DATA/Photos:/data/sync/Photos
+      - /DATA/AppData:/data/sync
+      # App data: SQLite DB, encrypted credentials, rclone.conf. KEEP OUTSIDE
+      # the sync folder above.
+      - /DATA/drivehub-app:/data/app
+      # OPTIONAL: enable "quiesce containers during snapshot" for consistent
+      # database backups (pauses chosen containers during the archive).
+      # - /var/run/docker.sock:/var/run/docker.sock:ro

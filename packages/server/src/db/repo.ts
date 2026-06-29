@@ -1,360 +1,244 @@
-import { and, desc, eq, inArray, like } from "drizzle-orm";
+import { desc, eq, inArray, like } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type {
-  AccountPublic,
-  AppSettings,
-  ConflictRecord,
   ActivityEvent,
-  OperationKind,
-  RemoteState,
+  AppSettings,
+  JobMode,
+  JobPublic,
+  JobRun,
+  JobStatus,
+  JobType,
+  RemotePublic,
+  RemoteStatus,
+  RemoteType,
+  Schedule,
+  SnapshotOptions,
 } from "@drivehub/types";
 import type { DB } from "./index.js";
-import {
-  accounts,
-  activity,
-  conflicts,
-  itemRemotes,
-  items,
-  kv,
-  operations,
-} from "./schema.js";
+import { activity, jobRuns, jobs, kv, remotes } from "./schema.js";
 
 const SETTINGS_KEY = "settings";
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  pollIntervalMs: 7000,
   concurrency: 4,
-  deletePropagation: true,
-  ignorePatterns: [
+  excludePatterns: [
     ".git/**",
     "node_modules/**",
     "**/*.tmp",
     "**/.DS_Store",
     "**/Thumbs.db",
-    "**/~$*",
+    "**/*-wal",
+    "**/*-shm",
   ],
+  bandwidthLimit: "",
   theme: "system",
 };
 
-type AccountRow = typeof accounts.$inferSelect;
-type ItemRow = typeof items.$inferSelect;
-type ItemRemoteRow = typeof itemRemotes.$inferSelect;
+type RemoteRow = typeof remotes.$inferSelect;
+type JobRow = typeof jobs.$inferSelect;
+type JobRunRow = typeof jobRuns.$inferSelect;
 
-export interface ItemWithRemotes {
-  item: ItemRow;
-  remotes: ItemRemoteRow[];
-}
-
-/**
- * SyncRepo is the single typed gateway to the sync-state store. Keeping all SQL
- * in one place makes the reconciler and executor easy to reason about and test.
- */
-export class SyncRepo {
+/** Single typed gateway to the v2 store (remotes, jobs, runs, activity). */
+export class Repo {
   constructor(private readonly db: DB) {}
 
-  // ----- accounts ---------------------------------------------------------
-  listAccounts(): AccountRow[] {
-    return this.db.select().from(accounts).all();
+  // ----- remotes ----------------------------------------------------------
+  listRemotes(): RemoteRow[] {
+    return this.db.select().from(remotes).all();
   }
 
-  getAccount(id: string): AccountRow | undefined {
-    return this.db.select().from(accounts).where(eq(accounts.id, id)).get();
+  getRemote(id: string): RemoteRow | undefined {
+    return this.db.select().from(remotes).where(eq(remotes.id, id)).get();
   }
 
-  getAccountByEmail(email: string): AccountRow | undefined {
-    return this.db
-      .select()
-      .from(accounts)
-      .where(eq(accounts.email, email))
-      .get();
+  getRemoteByName(name: string): RemoteRow | undefined {
+    return this.db.select().from(remotes).where(eq(remotes.name, name)).get();
   }
 
-  insertAccount(row: Omit<AccountRow, "id"> & { id?: string }): AccountRow {
-    const id = row.id ?? `acc_${nanoid(12)}`;
-    this.db
-      .insert(accounts)
-      .values({ ...row, id })
-      .run();
-    return this.getAccount(id)!;
-  }
-
-  updateAccount(id: string, patch: Partial<AccountRow>): void {
-    this.db.update(accounts).set(patch).where(eq(accounts.id, id)).run();
-  }
-
-  deleteAccount(id: string): void {
-    this.db.delete(accounts).where(eq(accounts.id, id)).run();
-  }
-
-  // ----- items ------------------------------------------------------------
-  getItemByPath(relPath: string): ItemRow | undefined {
-    return this.db.select().from(items).where(eq(items.relPath, relPath)).get();
-  }
-
-  listItems(): ItemRow[] {
-    return this.db.select().from(items).all();
-  }
-
-  upsertItem(input: {
-    relPath: string;
-    type: "file" | "folder";
-    localHash?: string | null;
-    localSize?: number | null;
-    localMtime?: number | null;
-    deleted?: boolean;
-  }): ItemRow {
-    const now = Date.now();
-    const existing = this.getItemByPath(input.relPath);
-    if (existing) {
-      this.db
-        .update(items)
-        .set({
-          type: input.type,
-          localHash: input.localHash ?? existing.localHash,
-          localSize: input.localSize ?? existing.localSize,
-          localMtime: input.localMtime ?? existing.localMtime,
-          deleted: input.deleted ?? existing.deleted,
-          updatedAt: now,
-        })
-        .where(eq(items.id, existing.id))
-        .run();
-      return this.getItemByPath(input.relPath)!;
-    }
-    const id = `itm_${nanoid(12)}`;
-    this.db
-      .insert(items)
-      .values({
-        id,
-        relPath: input.relPath,
-        type: input.type,
-        localHash: input.localHash ?? null,
-        localSize: input.localSize ?? null,
-        localMtime: input.localMtime ?? null,
-        deleted: input.deleted ?? false,
-        updatedAt: now,
-      })
-      .run();
-    return this.getItemByPath(input.relPath)!;
-  }
-
-  markItemDeleted(relPath: string): void {
-    const item = this.getItemByPath(relPath);
-    if (!item) return;
-    this.db
-      .update(items)
-      .set({ deleted: true, localHash: null, updatedAt: Date.now() })
-      .where(eq(items.id, item.id))
-      .run();
-  }
-
-  removeItem(relPath: string): void {
-    const item = this.getItemByPath(relPath);
-    if (!item) return;
-    this.db.delete(items).where(eq(items.id, item.id)).run();
-  }
-
-  // ----- item_remotes -----------------------------------------------------
-  getRemote(itemId: string, accountId: string): ItemRemoteRow | undefined {
-    return this.db
-      .select()
-      .from(itemRemotes)
-      .where(
-        and(eq(itemRemotes.itemId, itemId), eq(itemRemotes.accountId, accountId)),
-      )
-      .get();
-  }
-
-  listRemotesForItem(itemId: string): ItemRemoteRow[] {
-    return this.db
-      .select()
-      .from(itemRemotes)
-      .where(eq(itemRemotes.itemId, itemId))
-      .all();
-  }
-
-  upsertRemote(input: {
-    itemId: string;
-    accountId: string;
-    driveFileId?: string | null;
-    remoteHash?: string | null;
-    remoteModified?: number | null;
-    state: RemoteState;
-  }): ItemRemoteRow {
-    const existing = this.getRemote(input.itemId, input.accountId);
-    if (existing) {
-      this.db
-        .update(itemRemotes)
-        .set({
-          driveFileId: input.driveFileId ?? existing.driveFileId,
-          remoteHash:
-            input.remoteHash === undefined ? existing.remoteHash : input.remoteHash,
-          remoteModified: input.remoteModified ?? existing.remoteModified,
-          state: input.state,
-        })
-        .where(eq(itemRemotes.id, existing.id))
-        .run();
-      return this.getRemote(input.itemId, input.accountId)!;
-    }
+  insertRemote(input: {
+    name: string;
+    type: RemoteType;
+    label: string;
+    configEnc: string;
+    summary: Record<string, string>;
+    status?: RemoteStatus;
+  }): RemoteRow {
     const id = `rmt_${nanoid(12)}`;
     this.db
-      .insert(itemRemotes)
+      .insert(remotes)
       .values({
         id,
-        itemId: input.itemId,
-        accountId: input.accountId,
-        driveFileId: input.driveFileId ?? null,
-        remoteHash: input.remoteHash ?? null,
-        remoteModified: input.remoteModified ?? null,
-        state: input.state,
+        name: input.name,
+        type: input.type,
+        label: input.label,
+        configEnc: input.configEnc,
+        summary: JSON.stringify(input.summary),
+        status: input.status ?? "ok",
+        createdAt: Date.now(),
       })
       .run();
-    return this.getRemote(input.itemId, input.accountId)!;
+    return this.getRemote(id)!;
   }
 
-  setRemoteState(itemId: string, accountId: string, state: RemoteState): void {
+  updateRemote(id: string, patch: Partial<RemoteRow>): void {
+    this.db.update(remotes).set(patch).where(eq(remotes.id, id)).run();
+  }
+
+  setRemoteStatus(id: string, status: RemoteStatus): void {
+    this.db.update(remotes).set({ status }).where(eq(remotes.id, id)).run();
+  }
+
+  deleteRemote(id: string): void {
+    this.db.delete(remotes).where(eq(remotes.id, id)).run();
+  }
+
+  // ----- jobs -------------------------------------------------------------
+  listJobs(): JobRow[] {
+    return this.db.select().from(jobs).all();
+  }
+
+  listEnabledJobs(): JobRow[] {
+    return this.db.select().from(jobs).where(eq(jobs.enabled, true)).all();
+  }
+
+  getJob(id: string): JobRow | undefined {
+    return this.db.select().from(jobs).where(eq(jobs.id, id)).get();
+  }
+
+  insertJob(input: {
+    name: string;
+    type: JobType;
+    sourceRemoteId: string;
+    sourcePath: string;
+    destRemoteId: string;
+    destPath: string;
+    mode: JobMode;
+    schedule: Schedule;
+    enabled: boolean;
+    snapshot: SnapshotOptions;
+    quiesceContainers: string[];
+  }): JobRow {
+    const id = `job_${nanoid(12)}`;
     this.db
-      .update(itemRemotes)
-      .set({ state })
-      .where(
-        and(eq(itemRemotes.itemId, itemId), eq(itemRemotes.accountId, accountId)),
-      )
-      .run();
-  }
-
-  findRemoteByDriveId(
-    accountId: string,
-    driveFileId: string,
-  ): ItemRemoteRow | undefined {
-    return this.db
-      .select()
-      .from(itemRemotes)
-      .where(
-        and(
-          eq(itemRemotes.accountId, accountId),
-          eq(itemRemotes.driveFileId, driveFileId),
-        ),
-      )
-      .get();
-  }
-
-  // ----- operations -------------------------------------------------------
-  enqueueOperation(input: {
-    kind: OperationKind;
-    relPath: string;
-    type?: "file" | "folder";
-    accountId?: string | null;
-  }): void {
-    const now = Date.now();
-    this.db
-      .insert(operations)
+      .insert(jobs)
       .values({
-        id: `op_${nanoid(12)}`,
-        kind: input.kind,
-        relPath: input.relPath,
-        type: input.type ?? "file",
-        accountId: input.accountId ?? null,
-        attempts: 0,
-        status: "pending",
-        createdAt: now,
-        updatedAt: now,
+        id,
+        name: input.name,
+        type: input.type,
+        sourceRemoteId: input.sourceRemoteId,
+        sourcePath: input.sourcePath,
+        destRemoteId: input.destRemoteId,
+        destPath: input.destPath,
+        mode: input.mode,
+        scheduleJson: JSON.stringify(input.schedule),
+        enabled: input.enabled,
+        snapshotJson: JSON.stringify(input.snapshot),
+        quiesceJson: JSON.stringify(input.quiesceContainers),
+        lastStatus: "idle",
+        createdAt: Date.now(),
       })
+      .run();
+    return this.getJob(id)!;
+  }
+
+  updateJobConfig(
+    id: string,
+    input: {
+      name: string;
+      type: JobType;
+      sourceRemoteId: string;
+      sourcePath: string;
+      destRemoteId: string;
+      destPath: string;
+      mode: JobMode;
+      schedule: Schedule;
+      enabled: boolean;
+      snapshot: SnapshotOptions;
+      quiesceContainers: string[];
+    },
+  ): void {
+    this.db
+      .update(jobs)
+      .set({
+        name: input.name,
+        type: input.type,
+        sourceRemoteId: input.sourceRemoteId,
+        sourcePath: input.sourcePath,
+        destRemoteId: input.destRemoteId,
+        destPath: input.destPath,
+        mode: input.mode,
+        scheduleJson: JSON.stringify(input.schedule),
+        enabled: input.enabled,
+        snapshotJson: JSON.stringify(input.snapshot),
+        quiesceJson: JSON.stringify(input.quiesceContainers),
+      })
+      .where(eq(jobs.id, id))
       .run();
   }
 
-  listPendingOperations(limit = 100): (typeof operations.$inferSelect)[] {
+  updateJob(id: string, patch: Partial<JobRow>): void {
+    this.db.update(jobs).set(patch).where(eq(jobs.id, id)).run();
+  }
+
+  deleteJob(id: string): void {
+    this.db.delete(jobs).where(eq(jobs.id, id)).run();
+    this.db.delete(jobRuns).where(eq(jobRuns.jobId, id)).run();
+  }
+
+  // ----- job runs ---------------------------------------------------------
+  insertRun(jobId: string): JobRunRow {
+    const id = `run_${nanoid(12)}`;
+    this.db
+      .insert(jobRuns)
+      .values({ id, jobId, startedAt: Date.now(), status: "running" })
+      .run();
+    return this.db.select().from(jobRuns).where(eq(jobRuns.id, id)).get()!;
+  }
+
+  finishRun(
+    id: string,
+    status: JobStatus,
+    data: { bytes?: number; files?: number; message?: string | null },
+  ): JobRunRow {
+    this.db
+      .update(jobRuns)
+      .set({
+        status,
+        finishedAt: Date.now(),
+        bytesTransferred: data.bytes ?? 0,
+        filesTransferred: data.files ?? 0,
+        message: data.message ?? null,
+      })
+      .where(eq(jobRuns.id, id))
+      .run();
+    return this.db.select().from(jobRuns).where(eq(jobRuns.id, id)).get()!;
+  }
+
+  listRuns(jobId: string, limit = 50): JobRunRow[] {
     return this.db
       .select()
-      .from(operations)
-      .where(inArray(operations.status, ["pending", "running"]))
+      .from(jobRuns)
+      .where(eq(jobRuns.jobId, jobId))
+      .orderBy(desc(jobRuns.startedAt))
       .limit(limit)
       .all();
   }
 
-  countOperations(status: "pending" | "running" | "done" | "failed"): number {
-    const rows = this.db
+  recentRuns(limit = 50): JobRunRow[] {
+    return this.db
       .select()
-      .from(operations)
-      .where(eq(operations.status, status))
+      .from(jobRuns)
+      .orderBy(desc(jobRuns.startedAt))
+      .limit(limit)
       .all();
-    return rows.length;
   }
 
-  markOperation(
-    id: string,
-    status: "pending" | "running" | "done" | "failed",
-    error?: string,
-  ): void {
-    this.db
-      .update(operations)
-      .set({ status, error: error ?? null, updatedAt: Date.now() })
-      .where(eq(operations.id, id))
-      .run();
-  }
-
-  bumpOperationAttempts(id: string): number {
-    const row = this.db
+  countRunningRuns(): number {
+    return this.db
       .select()
-      .from(operations)
-      .where(eq(operations.id, id))
-      .get();
-    const attempts = (row?.attempts ?? 0) + 1;
-    this.db
-      .update(operations)
-      .set({ attempts, updatedAt: Date.now() })
-      .where(eq(operations.id, id))
-      .run();
-    return attempts;
-  }
-
-  clearFinishedOperations(): void {
-    this.db.delete(operations).where(eq(operations.status, "done")).run();
-  }
-
-  // ----- conflicts --------------------------------------------------------
-  insertConflict(input: {
-    relPath: string;
-    conflictCopyPath: string;
-    accountId: string;
-    accountEmail: string;
-  }): ConflictRecord {
-    const id = `cf_${nanoid(12)}`;
-    const detectedAt = Date.now();
-    this.db
-      .insert(conflicts)
-      .values({ id, ...input, detectedAt, resolved: false })
-      .run();
-    return { id, ...input, detectedAt, resolved: false };
-  }
-
-  listConflicts(includeResolved = false): ConflictRecord[] {
-    const rows = includeResolved
-      ? this.db.select().from(conflicts).all()
-      : this.db
-          .select()
-          .from(conflicts)
-          .where(eq(conflicts.resolved, false))
-          .all();
-    return rows.map((r) => ({
-      id: r.id,
-      relPath: r.relPath,
-      conflictCopyPath: r.conflictCopyPath,
-      accountId: r.accountId,
-      accountEmail: r.accountEmail,
-      detectedAt: r.detectedAt,
-      resolved: r.resolved,
-    }));
-  }
-
-  resolveConflict(id: string): void {
-    this.db
-      .update(conflicts)
-      .set({ resolved: true })
-      .where(eq(conflicts.id, id))
-      .run();
-  }
-
-  countUnresolvedConflicts(): number {
-    return this.listConflicts(false).length;
+      .from(jobRuns)
+      .where(inArray(jobRuns.status, ["running", "queued"]))
+      .all().length;
   }
 
   // ----- activity ---------------------------------------------------------
@@ -368,9 +252,8 @@ export class SyncRepo {
         level: ev.level,
         code: ev.code,
         message: ev.message,
-        relPath: ev.relPath ?? null,
-        accountId: ev.accountId ?? null,
-        accountEmail: ev.accountEmail ?? null,
+        jobId: ev.jobId ?? null,
+        remoteId: ev.remoteId ?? null,
       })
       .run();
     return { id, ...ev };
@@ -378,11 +261,7 @@ export class SyncRepo {
 
   recentActivity(limit = 100, search?: string): ActivityEvent[] {
     const base = this.db.select().from(activity);
-    const rows = (
-      search
-        ? base.where(like(activity.message, `%${search}%`))
-        : base
-    )
+    const rows = (search ? base.where(like(activity.message, `%${search}%`)) : base)
       .orderBy(desc(activity.at))
       .limit(limit)
       .all();
@@ -392,13 +271,38 @@ export class SyncRepo {
       level: r.level as ActivityEvent["level"],
       code: r.code,
       message: r.message,
-      relPath: r.relPath ?? undefined,
-      accountId: r.accountId ?? undefined,
-      accountEmail: r.accountEmail ?? undefined,
+      jobId: r.jobId ?? undefined,
+      remoteId: r.remoteId ?? undefined,
     }));
   }
 
-  // ----- settings (kv) ----------------------------------------------------
+  lastErrorAt(): number | null {
+    const row = this.db
+      .select()
+      .from(activity)
+      .where(eq(activity.level, "error"))
+      .orderBy(desc(activity.at))
+      .limit(1)
+      .get();
+    return row?.at ?? null;
+  }
+
+  // ----- generic kv -------------------------------------------------------
+  kvGet(key: string): string | null {
+    const row = this.db.select().from(kv).where(eq(kv.key, key)).get();
+    return row?.value ?? null;
+  }
+
+  kvSet(key: string, value: string): void {
+    const existing = this.db.select().from(kv).where(eq(kv.key, key)).get();
+    if (existing) {
+      this.db.update(kv).set({ value }).where(eq(kv.key, key)).run();
+    } else {
+      this.db.insert(kv).values({ key, value }).run();
+    }
+  }
+
+  // ----- settings ---------------------------------------------------------
   getSettings(): AppSettings {
     const row = this.db.select().from(kv).where(eq(kv.key, SETTINGS_KEY)).get();
     if (!row) return DEFAULT_SETTINGS;
@@ -411,11 +315,7 @@ export class SyncRepo {
 
   setSettings(settings: AppSettings): void {
     const value = JSON.stringify(settings);
-    const existing = this.db
-      .select()
-      .from(kv)
-      .where(eq(kv.key, SETTINGS_KEY))
-      .get();
+    const existing = this.db.select().from(kv).where(eq(kv.key, SETTINGS_KEY)).get();
     if (existing) {
       this.db.update(kv).set({ value }).where(eq(kv.key, SETTINGS_KEY)).run();
     } else {
@@ -424,19 +324,70 @@ export class SyncRepo {
   }
 }
 
-/** Map an account DB row to the public (no-secrets) shape used by the API. */
-export function toAccountPublic(row: AccountRow): AccountPublic {
+// ----- mappers ------------------------------------------------------------
+export function toRemotePublic(row: RemoteRow): RemotePublic {
+  let summary: Record<string, string> = {};
+  try {
+    summary = JSON.parse(row.summary);
+  } catch {
+    /* keep empty */
+  }
   return {
     id: row.id,
-    email: row.email,
     name: row.name,
-    picture: row.picture,
-    status: row.status as AccountPublic["status"],
-    rootFolderId: row.rootFolderId,
-    rootFolderName: row.rootFolderName,
-    quotaUsedBytes: row.quotaUsed,
-    quotaTotalBytes: row.quotaTotal,
-    lastDeltaAt: row.lastDeltaAt,
+    type: row.type as RemoteType,
+    label: row.label,
+    summary,
+    status: row.status as RemoteStatus,
     createdAt: row.createdAt,
   };
+}
+
+export function toJobPublic(row: JobRow): JobPublic {
+  const schedule = safeParse<Schedule>(row.scheduleJson, { kind: "manual" });
+  const snapshot = safeParse<SnapshotOptions>(row.snapshotJson, {
+    retentionKeep: 7,
+    compressionLevel: 6,
+  });
+  const quiesce = safeParse<string[]>(row.quiesceJson, []);
+  return {
+    id: row.id,
+    name: row.name,
+    type: row.type as JobType,
+    sourceRemoteId: row.sourceRemoteId,
+    sourcePath: row.sourcePath,
+    destRemoteId: row.destRemoteId,
+    destPath: row.destPath,
+    mode: row.mode as JobMode,
+    schedule,
+    enabled: row.enabled,
+    snapshot,
+    quiesceContainers: quiesce,
+    lastRunAt: row.lastRunAt,
+    lastStatus: row.lastStatus as JobStatus,
+    lastError: row.lastError,
+    nextRunAt: row.nextRunAt,
+    createdAt: row.createdAt,
+  };
+}
+
+export function toJobRun(row: JobRunRow): JobRun {
+  return {
+    id: row.id,
+    jobId: row.jobId,
+    startedAt: row.startedAt,
+    finishedAt: row.finishedAt,
+    status: row.status as JobStatus,
+    bytesTransferred: row.bytesTransferred,
+    filesTransferred: row.filesTransferred,
+    message: row.message,
+  };
+}
+
+function safeParse<T>(s: string, fallback: T): T {
+  try {
+    return JSON.parse(s) as T;
+  } catch {
+    return fallback;
+  }
 }
