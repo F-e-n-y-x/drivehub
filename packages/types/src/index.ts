@@ -179,6 +179,9 @@ export interface JobProgress {
 // ---------------------------------------------------------------------------
 
 export interface RemoteEntry {
+  /** Backend's unique id (e.g. Google Drive file id); null if unsupported.
+   * Use it to disambiguate same-named files for selection/React keys. */
+  id?: string | null;
   name: string;
   path: string;
   isDir: boolean;

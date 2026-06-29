@@ -666,6 +666,10 @@ export class RemoteService {
     const raw = await this.rclone.lsjson(target);
     const entries = raw
       .map((e) => ({
+        // Backends like Google Drive allow several files with the SAME name (and
+        // thus same path) in one folder — carry the backend's unique ID so the
+        // UI can tell them apart for selection/keys.
+        id: e.ID ?? null,
         name: e.Name,
         path: subPath ? `${subPath.replace(/\/+$/, "")}/${e.Name}` : e.Name,
         isDir: e.IsDir,

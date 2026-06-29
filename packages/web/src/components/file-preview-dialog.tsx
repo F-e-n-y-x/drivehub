@@ -25,7 +25,13 @@ import { cn, formatBytes } from "@/lib/utils";
 /** Files larger than this are not fetched for text preview. */
 const TEXT_PREVIEW_LIMIT = 1024 * 1024; // ~1 MB
 
-type PreviewKind = "image" | "video" | "audio" | "pdf" | "text" | "none";
+/** docx files larger than this are not auto-rendered (mammoth is heavy). */
+const DOCX_PREVIEW_LIMIT = 25 * 1024 * 1024; // ~25 MB
+
+const DOCX_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+type PreviewKind = "image" | "video" | "audio" | "pdf" | "text" | "docx" | "none";
 
 const TEXT_EXTS = new Set([
   "txt",
@@ -94,6 +100,8 @@ function previewKind(entry: RemoteEntry): PreviewKind {
   )
     return "audio";
   if (mime === "application/pdf" || ext === "pdf") return "pdf";
+  // Modern Word (.docx) only — old binary .doc isn't supported by mammoth.
+  if (mime === DOCX_MIME || ext === "docx") return "docx";
   if (
     mime.startsWith("text/") ||
     mime === "application/json" ||
@@ -355,6 +363,15 @@ function PreviewStage({
       />
     );
 
+  if (kind === "docx")
+    return (
+      <DocxStage
+        entry={entry}
+        src={src}
+        downloadHref={buildUrl(entry, true)}
+      />
+    );
+
   if (kind === "text")
     return (
       <TextStage
@@ -576,6 +593,93 @@ function TextStage({
       >
         {state.text}
       </pre>
+    </div>
+  );
+}
+
+// --- Docx stage --------------------------------------------------------------
+
+/**
+ * In-browser Word (.docx) preview. Fetches the file bytes and converts them to
+ * HTML with `mammoth`, which is lazy-loaded (dynamic import) so it never bloats
+ * the main bundle — the chunk is only pulled when a docx is actually opened.
+ */
+function DocxStage({
+  entry,
+  src,
+  downloadHref,
+}: {
+  entry: RemoteEntry;
+  src: string;
+  downloadHref: string;
+}) {
+  const [state, setState] = useState<
+    | { status: "loading" }
+    | { status: "too-large" }
+    | { status: "error" }
+    | { status: "ready"; html: string }
+  >({ status: "loading" });
+
+  useEffect(() => {
+    const size = entry.sizeBytes;
+    if (Number.isFinite(size) && size > DOCX_PREVIEW_LIMIT) {
+      setState({ status: "too-large" });
+      return;
+    }
+    let cancelled = false;
+    setState({ status: "loading" });
+    (async () => {
+      try {
+        const res = await fetch(src);
+        if (!res.ok) throw new Error(String(res.status));
+        const arrayBuffer = await res.arrayBuffer();
+        // Lazy-load mammoth only when a docx is previewed.
+        const mammoth = await import("mammoth");
+        const { value } = await mammoth.convertToHtml({ arrayBuffer });
+        if (!cancelled) setState({ status: "ready", html: value });
+      } catch {
+        if (!cancelled) setState({ status: "error" });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [src, entry.sizeBytes]);
+
+  if (state.status === "loading")
+    return (
+      <StageMessage
+        icon={Loader2}
+        iconClassName="animate-spin"
+        text="Rendering document…"
+      />
+    );
+  if (state.status === "too-large")
+    return (
+      <StageMessage
+        icon={FileQuestion}
+        text="Too large to preview."
+        downloadHref={downloadHref}
+        downloadName={entry.name}
+      />
+    );
+  if (state.status === "error")
+    return (
+      <StageMessage
+        icon={FileQuestion}
+        text="Couldn't render this document — use Download."
+        downloadHref={downloadHref}
+        downloadName={entry.name}
+      />
+    );
+
+  return (
+    <div className="h-full w-full overflow-auto bg-muted/30 px-4 py-6 sm:px-8 sm:py-10">
+      <div
+        className="docx-prose mx-auto max-w-3xl rounded-lg border border-border bg-white px-8 py-10 text-[15px] leading-relaxed text-zinc-900 shadow-sm sm:px-12 sm:py-14"
+        // mammoth produces sanitized HTML from the document body.
+        dangerouslySetInnerHTML={{ __html: state.html }}
+      />
     </div>
   );
 }

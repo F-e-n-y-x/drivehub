@@ -189,7 +189,7 @@ export class RcloneService {
 
   /** List a remote path. `target` is "remoteName:subpath". */
   async lsjson(target: string): Promise<
-    Array<{ Name: string; Path: string; IsDir: boolean; Size: number; ModTime: string; MimeType?: string }>
+    Array<{ Name: string; Path: string; IsDir: boolean; Size: number; ModTime: string; MimeType?: string; ID?: string }>
   > {
     const { code, stdout, stderr } = await this.run([
       "lsjson",

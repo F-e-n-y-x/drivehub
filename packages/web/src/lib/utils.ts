@@ -7,7 +7,8 @@ export function cn(...inputs: ClassValue[]): string {
 
 /** Human-readable byte size, e.g. 1536 -> "1.5 KB". */
 export function formatBytes(bytes: number | null | undefined, decimals = 1): string {
-  if (bytes === null || bytes === undefined) return "—";
+  if (bytes === null || bytes === undefined || !Number.isFinite(bytes) || bytes < 0)
+    return "—";
   if (bytes === 0) return "0 B";
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB", "TB", "PB"];

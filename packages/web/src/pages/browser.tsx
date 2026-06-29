@@ -123,6 +123,15 @@ function fsListingToRemoteListing(listing: FsListing): {
 }
 
 /**
+ * Stable, UNIQUE key for an entry, used for selection identity and React keys.
+ * Some backends (e.g. Google Drive) allow multiple files with the SAME name —
+ * and thus the same `path` — in one folder, so `path` is NOT unique. Prefer the
+ * backend's file id; fall back to `path` for single-name backends (where it is
+ * unique), leaving their behavior unchanged.
+ */
+const entryKey = (e: RemoteEntry): string => e.id ?? e.path;
+
+/**
  * INTERACTION MODEL (select vs open)
  * ----------------------------------
  * A leading checkbox column owns selection. Clicking a row's blank area or its
@@ -432,7 +441,8 @@ function FileManager({
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [view, setView] = useState<ViewMode>("list");
 
-  // Selection state — set of entry paths, plus an anchor for shift-range.
+  // Selection state — set of entry keys (see `entryKey`), plus an anchor for
+  // shift-range. Keyed by entryKey (not path) so same-named files stay distinct.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [anchor, setAnchor] = useState<string | null>(null);
 
@@ -515,18 +525,18 @@ function FileManager({
 
   // --- Selection helpers ----------------------------------------------------
 
-  const byPath = useMemo(() => {
+  const byKey = useMemo(() => {
     const m = new Map<string, RemoteEntry>();
-    for (const e of entries) m.set(e.path, e);
+    for (const e of entries) m.set(entryKey(e), e);
     return m;
   }, [entries]);
 
   const selectedEntries = useMemo(
     () =>
       [...selected]
-        .map((p) => byPath.get(p))
+        .map((k) => byKey.get(k))
         .filter((e): e is RemoteEntry => !!e),
-    [selected, byPath],
+    [selected, byKey],
   );
 
   const clearSelection = useCallback(() => {
@@ -536,11 +546,11 @@ function FileManager({
 
   const onRowSelect = useCallback(
     (entry: RemoteEntry, e: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean }) => {
-      const path = entry.path;
+      const key = entryKey(entry);
       if (e.shiftKey && anchor) {
-        const order = visible.map((v) => v.path);
+        const order = visible.map(entryKey);
         const a = order.indexOf(anchor);
-        const b = order.indexOf(path);
+        const b = order.indexOf(key);
         if (a !== -1 && b !== -1) {
           const [lo, hi] = a < b ? [a, b] : [b, a];
           setSelected(new Set(order.slice(lo, hi + 1)));
@@ -550,16 +560,16 @@ function FileManager({
       if (e.metaKey || e.ctrlKey) {
         setSelected((prev) => {
           const next = new Set(prev);
-          if (next.has(path)) next.delete(path);
-          else next.add(path);
+          if (next.has(key)) next.delete(key);
+          else next.add(key);
           return next;
         });
-        setAnchor(path);
+        setAnchor(key);
         return;
       }
       // Plain click: select just this one.
-      setSelected(new Set([path]));
-      setAnchor(path);
+      setSelected(new Set([key]));
+      setAnchor(key);
     },
     [anchor, visible],
   );
@@ -568,29 +578,29 @@ function FileManager({
   // Supports shift-click on a checkbox for a range select (extends the set).
   const toggleOne = useCallback(
     (entry: RemoteEntry, e: { shiftKey: boolean }) => {
-      const path = entry.path;
+      const key = entryKey(entry);
       if (e.shiftKey && anchor) {
-        const order = visible.map((v) => v.path);
+        const order = visible.map(entryKey);
         const a = order.indexOf(anchor);
-        const b = order.indexOf(path);
+        const b = order.indexOf(key);
         if (a !== -1 && b !== -1) {
           const [lo, hi] = a < b ? [a, b] : [b, a];
           setSelected((prev) => {
             const next = new Set(prev);
-            for (const p of order.slice(lo, hi + 1)) next.add(p);
+            for (const k of order.slice(lo, hi + 1)) next.add(k);
             return next;
           });
-          setAnchor(path);
+          setAnchor(key);
           return;
         }
       }
       setSelected((prev) => {
         const next = new Set(prev);
-        if (next.has(path)) next.delete(path);
-        else next.add(path);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
         return next;
       });
-      setAnchor(path);
+      setAnchor(key);
     },
     [anchor, visible],
   );
@@ -599,7 +609,7 @@ function FileManager({
     setSelected((prev) =>
       prev.size === visible.length && visible.length > 0
         ? new Set()
-        : new Set(visible.map((v) => v.path)),
+        : new Set(visible.map(entryKey)),
     );
   }, [visible]);
 
@@ -763,8 +773,11 @@ function FileManager({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* Toolbar */}
-      <div className="sticky top-0 z-10 flex flex-col gap-3 border-b border-border bg-card/95 p-3 backdrop-blur">
+      {/* Toolbar — pinned above the scrolling file list. Sits at the top of the
+          FileManager column; the list body below has its own scroll, so the
+          actions/breadcrumbs stay reachable. Solid surface (bg-card) + z-20 so
+          scrolling rows (and the list's sticky header) never bleed through. */}
+      <div className="sticky top-0 z-20 flex flex-col gap-3 border-b border-border bg-card p-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           {remoteSelector}
 
@@ -1048,9 +1061,10 @@ function FileManager({
               />
             )}
             onContextMenuRow={(entry) => {
-              if (!selected.has(entry.path)) {
-                setSelected(new Set([entry.path]));
-                setAnchor(entry.path);
+              const key = entryKey(entry);
+              if (!selected.has(key)) {
+                setSelected(new Set([key]));
+                setAnchor(key);
               }
             }}
           />
@@ -1078,9 +1092,10 @@ function FileManager({
               />
             )}
             onContextMenuRow={(entry) => {
-              if (!selected.has(entry.path)) {
-                setSelected(new Set([entry.path]));
-                setAnchor(entry.path);
+              const key = entryKey(entry);
+              if (!selected.has(key)) {
+                setSelected(new Set([key]));
+                setAnchor(key);
               }
             }}
           />
@@ -1313,7 +1328,7 @@ function RowMenu({
 }) {
   // The menu acts on the multi-selection if the right-clicked row is part of
   // it; otherwise it acts on just that row (and selects it for clarity).
-  const inSelection = selectedEntries.some((s) => s.path === entry.path);
+  const inSelection = selectedEntries.some((s) => entryKey(s) === entryKey(entry));
   const targets = inSelection && selectedEntries.length > 0 ? selectedEntries : [entry];
   const multi = targets.length > 1;
   const files = targets.filter((t) => !t.isDir);
@@ -1441,9 +1456,10 @@ function ListView({
         {entries.map((entry) => {
           const Icon = entryIcon(entry.name, entry.isDir, entry.mimeType);
           const isDir = entry.isDir;
-          const isSel = selected.has(entry.path);
+          const key = entryKey(entry);
+          const isSel = selected.has(key);
           return (
-            <ContextMenu key={entry.path}>
+            <ContextMenu key={key}>
               <ContextMenuTrigger asChild>
                 <tr
                   onClick={(e) =>
@@ -1548,9 +1564,10 @@ function GridView({
       {entries.map((entry) => {
         const Icon = entryIcon(entry.name, entry.isDir, entry.mimeType);
         const isDir = entry.isDir;
-        const isSel = selected.has(entry.path);
+        const key = entryKey(entry);
+        const isSel = selected.has(key);
         return (
-          <ContextMenu key={entry.path}>
+          <ContextMenu key={key}>
             <ContextMenuTrigger asChild>
               <div
                 onClick={(e) =>
