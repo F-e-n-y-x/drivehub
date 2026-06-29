@@ -22,7 +22,7 @@ import { JobProgress } from "@/components/job-progress";
 import { JobDialog } from "@/components/job-dialog";
 import { RunHistoryDialog } from "@/components/run-history-dialog";
 import { jobStatusMeta } from "@/lib/status";
-import { modeLabel, scheduleSummary } from "@/lib/remotes";
+import { modeLabel, remoteDisplayName, scheduleSummary } from "@/lib/remotes";
 import { useJobMutations } from "@/hooks/queries";
 import { useProgressStore } from "@/store/progress";
 import {
@@ -45,7 +45,7 @@ function Endpoint({
   path: string;
 }) {
   const remote = remotes.find((r) => r.id === id);
-  const label = remote?.label ?? "?";
+  const label = remote ? remoteDisplayName(remote) : "?";
   return (
     <span className="flex min-w-0 items-center gap-1">
       {remote && <RemoteIcon type={remote.type} className="size-3.5" />}

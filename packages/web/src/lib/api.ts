@@ -6,6 +6,8 @@ import type {
   JobInput,
   JobPublic,
   JobRun,
+  LogEntry,
+  LogLevel,
   OkResponse,
   RemoteListing,
   RemotePublic,
@@ -79,6 +81,20 @@ export interface TransferOpInput {
   op: "copy" | "move";
 }
 
+export interface IcloudStartInput {
+  label: string;
+  apple_id: string;
+  password: string;
+}
+
+/**
+ * Result of an iCloud connect step. `done` carries the finished remote; the
+ * server can ask for a 2FA code one or more times via `need_2fa`.
+ */
+export type IcloudStepResult =
+  | { status: "done"; remote: RemotePublic }
+  | { status: "need_2fa"; sessionId: string; prompt: string };
+
 /**
  * Builds the URL that streams a remote file's bytes. Use directly as an
  * `<img>/<video>/<audio>/<iframe>` src or download href, or fetch it for text
@@ -109,6 +125,17 @@ export const api = {
     request<RemotePublic>("/api/remotes", { method: "POST", json: body }),
   createOAuthRemote: (body: OAuthTokenInput) =>
     request<RemotePublic>("/api/remotes/oauth-token", {
+      method: "POST",
+      json: body,
+    }),
+  // iCloud's interactive 2FA flow: start, then verify one or more codes.
+  startIcloud: (body: IcloudStartInput) =>
+    request<IcloudStepResult>("/api/remotes/icloud/start", {
+      method: "POST",
+      json: body,
+    }),
+  verifyIcloud: (body: { sessionId: string; code: string }) =>
+    request<IcloudStepResult>("/api/remotes/icloud/verify", {
       method: "POST",
       json: body,
     }),
@@ -197,7 +224,24 @@ export const api = {
 
   // System info (About / diagnostics)
   getSystem: () => request<SystemInfo>("/api/system"),
+
+  // Logs (in-app developer viewer)
+  getLogs: (limit?: number) =>
+    request<LogEntry[]>(
+      `/api/logs${limit ? `?limit=${encodeURIComponent(String(limit))}` : ""}`,
+    ),
+  getLogLevel: () => request<{ level: LogLevel }>("/api/logs/level"),
+  setLogLevel: (level: LogLevel) =>
+    request<{ level: LogLevel }>("/api/logs/level", {
+      method: "PUT",
+      json: { level },
+    }),
 };
+
+/** Direct download URL for the full log file (use as an <a download> href). */
+export function logsDownloadUrl(): string {
+  return "/api/logs/download";
+}
 
 /** Centralized query keys so SSE handlers and components stay in sync. */
 export const qk = {
@@ -214,4 +258,6 @@ export const qk = {
   activity: (search: string) => ["activity", search] as const,
   updates: ["updates"] as const,
   system: ["system"] as const,
+  logs: ["logs"] as const,
+  logLevel: ["log-level"] as const,
 };

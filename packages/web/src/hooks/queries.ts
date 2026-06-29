@@ -3,11 +3,12 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import type { AppSettings, JobInput } from "@drivehub/types";
+import type { AppSettings, JobInput, LogLevel } from "@drivehub/types";
 import {
   api,
   qk,
   type CreateRemoteInput,
+  type IcloudStartInput,
   type OAuthTokenInput,
   type TransferOpInput,
 } from "@/lib/api";
@@ -195,7 +196,25 @@ export function useRemoteMutations() {
       toast.error("Test failed", { description: e.message }),
   });
 
-  return { create, createOAuth, remove, test };
+  // iCloud's two-step (2FA) connect. The dialog drives the step flow and
+  // handles success/error UI; these mutations just call the endpoints and
+  // refresh the remotes list once a remote is finalized.
+  const startIcloud = useMutation({
+    mutationFn: (body: IcloudStartInput) => api.startIcloud(body),
+    onSuccess: (res) => {
+      if (res.status === "done") refresh();
+    },
+  });
+
+  const verifyIcloud = useMutation({
+    mutationFn: (body: { sessionId: string; code: string }) =>
+      api.verifyIcloud(body),
+    onSuccess: (res) => {
+      if (res.status === "done") refresh();
+    },
+  });
+
+  return { create, createOAuth, remove, test, startIcloud, verifyIcloud };
 }
 
 // --- Remote file-manager ops ----------------------------------------------
@@ -365,4 +384,27 @@ export function useUpdateActions() {
   });
 
   return { checkNow, updateRclone };
+}
+
+// --- Logs -----------------------------------------------------------------
+
+export function useLogLevel() {
+  return useQuery({
+    queryKey: qk.logLevel,
+    queryFn: api.getLogLevel,
+    staleTime: 60_000,
+  });
+}
+
+export function useSetLogLevel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (level: LogLevel) => api.setLogLevel(level),
+    onSuccess: ({ level }) => {
+      qc.setQueryData(qk.logLevel, { level });
+      toast.success("Log level set", { description: level });
+    },
+    onError: (e: Error) =>
+      toast.error("Couldn't set log level", { description: e.message }),
+  });
 }

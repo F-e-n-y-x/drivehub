@@ -49,7 +49,7 @@ import { RemoteIcon } from "@/components/brand-icon";
 import { NamePromptDialog } from "@/components/name-prompt-dialog";
 import { FilePreviewDialog } from "@/components/file-preview-dialog";
 import { entryIcon } from "@/lib/file-icons";
-import { remoteTypeLabel } from "@/lib/remotes";
+import { remoteSecondaryLabel } from "@/lib/remotes";
 import { cn, formatBytes, formatRelativeTime } from "@/lib/utils";
 import { fileUrl, type ApiError, type TransferOpInput } from "@/lib/api";
 import { useClipboardStore } from "@/store/clipboard";
@@ -110,11 +110,11 @@ export function BrowserPage() {
                 options={remotes.map((r) => ({
                   value: r.id,
                   label: (
-                    <span className="flex items-center gap-2">
+                    <span className="flex min-w-0 items-center gap-2">
                       <RemoteIcon type={r.type} className="size-4" />
                       <span className="truncate">{r.label}</span>
-                      <span className="text-muted-foreground">
-                        · {remoteTypeLabel(r.type)}
+                      <span className="truncate text-muted-foreground">
+                        · {remoteSecondaryLabel(r)}
                       </span>
                     </span>
                   ),

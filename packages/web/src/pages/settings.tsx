@@ -5,6 +5,7 @@ import type { AppSettings } from "@drivehub/types";
 import { useSettings, useSaveSettings } from "@/hooks/queries";
 import { UpdatesSection } from "@/components/settings/updates-section";
 import { SystemSection } from "@/components/settings/system-section";
+import { LogsSection } from "@/components/settings/logs-section";
 import { useUIStore, type ThemePreference } from "@/store/ui";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -216,6 +217,18 @@ export function SettingsPage() {
       <UpdatesSection />
 
       <SystemSection />
+
+      <div className="space-y-3 pt-2">
+        <div>
+          <h2 className="text-base font-semibold tracking-tight text-foreground">
+            Developer
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Diagnostics and live logs for troubleshooting.
+          </p>
+        </div>
+        <LogsSection />
+      </div>
     </form>
   );
 }

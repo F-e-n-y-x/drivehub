@@ -23,7 +23,12 @@ import { SimpleSelect } from "@/components/ui/select";
 import { Field } from "@/components/field";
 import { RemoteIcon } from "@/components/brand-icon";
 import { PathPickerDialog } from "@/components/path-picker-dialog";
-import { modeHelp, modeLabel, WEEKDAYS } from "@/lib/remotes";
+import {
+  modeHelp,
+  modeLabel,
+  remoteDisplayName,
+  WEEKDAYS,
+} from "@/lib/remotes";
 import { useJobMutations, useRemotes } from "@/hooks/queries";
 
 const MODES: JobMode[] = ["two_way", "mirror", "additive"];
@@ -94,8 +99,10 @@ export function JobDialog({
     setForm((p) => ({ ...p, schedule: { ...p.schedule, ...patch } }));
 
   const remoteOptions = remotes ?? [];
-  const remoteLabel = (id: string) =>
-    remoteOptions.find((r) => r.id === id)?.label ?? "remote";
+  const remoteLabel = (id: string) => {
+    const r = remoteOptions.find((r) => r.id === id);
+    return r ? remoteDisplayName(r) : "remote";
+  };
 
   const isSnapshot = form.type === "snapshot";
 
@@ -327,15 +334,23 @@ function Endpoint({
             onValueChange={onRemote}
             placeholder="Select a remote…"
             aria-label={`${title} remote`}
-            options={remotes.map((r) => ({
-              value: r.id,
-              label: (
-                <span className="flex items-center gap-2">
-                  <RemoteIcon type={r.type} className="size-4" />
-                  {r.label}
-                </span>
-              ),
-            }))}
+            options={remotes.map((r) => {
+              const email = r.summary.email?.trim();
+              return {
+                value: r.id,
+                label: (
+                  <span className="flex min-w-0 items-center gap-2">
+                    <RemoteIcon type={r.type} className="size-4" />
+                    <span className="truncate">{r.label}</span>
+                    {email && (
+                      <span className="truncate text-muted-foreground">
+                        · {email}
+                      </span>
+                    )}
+                  </span>
+                ),
+              };
+            })}
           />
         </Field>
         <Field label="Path">

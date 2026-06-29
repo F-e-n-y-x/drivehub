@@ -5,8 +5,10 @@ import {
   ChevronDown,
   ExternalLink,
   Loader2,
+  ShieldCheck,
 } from "lucide-react";
 import type { RemoteTypeInfo } from "@drivehub/types";
+import type { IcloudStepResult } from "@/lib/api";
 import {
   Dialog,
   DialogContent,
@@ -26,7 +28,7 @@ import { RemoteIcon } from "@/components/brand-icon";
 import { useRemoteCatalog, useRemoteMutations, useRemotes } from "@/hooks/queries";
 import { toast } from "@/components/ui/toast";
 
-type Step = "pick" | "form";
+type Step = "pick" | "form" | "icloud-2fa";
 
 // How long to wait for the OAuth tab to complete before giving up. The flow
 // is: open Google in a new tab → user authorizes → backend creates the remote
@@ -42,7 +44,8 @@ export function AddRemoteDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { data: catalog, isLoading } = useRemoteCatalog();
-  const { create, createOAuth } = useRemoteMutations();
+  const { create, createOAuth, startIcloud, verifyIcloud } =
+    useRemoteMutations();
   const { data: remotes } = useRemotes();
 
   const [step, setStep] = useState<Step>("pick");
@@ -50,6 +53,12 @@ export function AddRemoteDialog({
   const [label, setLabel] = useState("");
   const [params, setParams] = useState<Record<string, string>>({});
   const [token, setToken] = useState("");
+
+  // iCloud 2FA step state.
+  const [icloudSession, setIcloudSession] = useState<string | null>(null);
+  const [icloudPrompt, setIcloudPrompt] = useState("");
+  const [icloudCode, setIcloudCode] = useState("");
+  const [icloudError, setIcloudError] = useState<string | null>(null);
   // For Google Drive: reveal the "paste an rclone token" path alongside the
   // redirect button (needed when accessing DriveHub via an IP address).
   const [driveTokenMode, setDriveTokenMode] = useState(false);
@@ -96,6 +105,10 @@ export function AddRemoteDialog({
     setDriveTokenMode(false);
     setConnectPhase("idle");
     setConnectHint(null);
+    setIcloudSession(null);
+    setIcloudPrompt("");
+    setIcloudCode("");
+    setIcloudError(null);
   };
 
   const close = (next: boolean) => {
@@ -121,6 +134,7 @@ export function AddRemoteDialog({
 
   const isGoogle = selected?.type === "drive";
   const isLocal = selected?.type === "local";
+  const isIcloud = selected?.type === "icloud";
   const isOtherOAuth =
     selected?.oauth && (selected.type === "dropbox" || selected.type === "onedrive");
   // Drive uses redirect by default, but can paste a token in "advanced" mode.
@@ -193,8 +207,42 @@ export function AddRemoteDialog({
     setConnectHint(null);
   };
 
+  // Shared handler for both iCloud steps: a `done` result closes the dialog
+  // (the mutation's onSuccess already invalidated qk.remotes); a `need_2fa`
+  // result moves us into / keeps us on the verification step.
+  const handleIcloudResult = (res: IcloudStepResult) => {
+    setIcloudError(null);
+    if (res.status === "done") {
+      toast.success("iCloud connected", { description: res.remote.label });
+      close(false);
+      return;
+    }
+    setIcloudSession(res.sessionId);
+    setIcloudPrompt(res.prompt);
+    setIcloudCode("");
+    setStep("icloud-2fa");
+  };
+
   const submit = () => {
     if (!selected) return;
+    if (isIcloud) {
+      setIcloudError(null);
+      startIcloud.mutate(
+        {
+          label: label || selected.label,
+          apple_id: (params.apple_id ?? "").trim(),
+          password: params.password ?? "",
+        },
+        {
+          onSuccess: handleIcloudResult,
+          onError: (e: Error) => {
+            setIcloudError(e.message);
+            toast.error("Couldn't connect iCloud", { description: e.message });
+          },
+        },
+      );
+      return;
+    }
     if (isGoogleRedirect) {
       startRedirectConnect(selected);
       return;
@@ -216,7 +264,26 @@ export function AddRemoteDialog({
     );
   };
 
-  const busy = create.isPending || createOAuth.isPending;
+  const submitIcloudCode = () => {
+    if (!icloudSession || icloudCode.trim().length === 0) return;
+    setIcloudError(null);
+    verifyIcloud.mutate(
+      { sessionId: icloudSession, code: icloudCode.trim() },
+      {
+        onSuccess: handleIcloudResult,
+        onError: (e: Error) => {
+          setIcloudError(e.message);
+          toast.error("Verification failed", { description: e.message });
+        },
+      },
+    );
+  };
+
+  const busy =
+    create.isPending ||
+    createOAuth.isPending ||
+    startIcloud.isPending ||
+    verifyIcloud.isPending;
   const canSubmit =
     !!selected &&
     !!(label || selected.label).trim() &&
@@ -262,6 +329,76 @@ export function AddRemoteDialog({
                     );
                   })}
             </div>
+          </>
+        ) : step === "icloud-2fa" ? (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ShieldCheck className="size-4 text-accent" />
+                Enter verification code
+              </DialogTitle>
+              <DialogDescription>
+                {icloudPrompt ||
+                  "Apple sent a verification code to your trusted devices."}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3.5">
+              <Field label="Verification code" htmlFor="icloud-code" required>
+                <Input
+                  id="icloud-code"
+                  autoFocus
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={icloudCode}
+                  onChange={(e) =>
+                    setIcloudCode(
+                      e.target.value.replace(/\D/g, "").slice(0, 6),
+                    )
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && icloudCode.trim().length > 0) {
+                      e.preventDefault();
+                      submitIcloudCode();
+                    }
+                  }}
+                  placeholder="123456"
+                  className="text-center font-mono text-lg tracking-[0.4em]"
+                />
+              </Field>
+
+              {icloudError && (
+                <p className="rounded-lg bg-danger/[0.06] px-3 py-2.5 text-xs text-danger leading-relaxed">
+                  {icloudError}
+                </p>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => {
+                  // Back to the credentials form to retry from the top.
+                  setIcloudSession(null);
+                  setIcloudCode("");
+                  setIcloudError(null);
+                  setStep("form");
+                }}
+              >
+                <ArrowLeft className="size-3.5" />
+                Back
+              </Button>
+              <Button
+                variant="accent"
+                disabled={busy || icloudCode.trim().length === 0}
+                onClick={submitIcloudCode}
+              >
+                {busy && <Loader2 className="size-4 animate-spin" />}
+                Verify
+              </Button>
+            </DialogFooter>
           </>
         ) : (
           selected && (
@@ -428,6 +565,8 @@ export function AddRemoteDialog({
                       Connect with Google
                       <ExternalLink className="size-3.5" />
                     </>
+                  ) : isIcloud ? (
+                    "Continue"
                   ) : (
                     "Add remote"
                   )}
