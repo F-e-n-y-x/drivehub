@@ -306,10 +306,8 @@ export interface UpdateStatus {
 export interface TerminalStatus {
   enabled: boolean;
   running: boolean;
-  port: number;
-  user: string;
-  /** Generated/configured password; null when the terminal is disabled. */
-  password: string | null;
+  /** Same-origin path DriveHub reverse-proxies the terminal at (e.g. /terminal). */
+  path: string;
 }
 
 export interface SystemInfo {

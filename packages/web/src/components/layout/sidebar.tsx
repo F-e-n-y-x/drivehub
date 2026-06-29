@@ -4,10 +4,12 @@ import {
   PanelLeft,
   Github,
   Terminal,
+  TerminalSquare,
   type LucideIcon,
 } from "lucide-react";
 import { navItems } from "./nav";
 import { UpdateWidget } from "./update-widget";
+import { useTerminal } from "@/hooks/queries";
 import { useUIStore } from "@/store/ui";
 import { cn } from "@/lib/utils";
 import { SimpleTooltip } from "@/components/ui/tooltip";
@@ -85,6 +87,7 @@ export function Sidebar() {
   const collapsed = useUIStore((s) => s.sidebarCollapsed);
   const toggle = useUIStore((s) => s.toggleSidebar);
   const showLogs = useUIStore((s) => s.showLogs);
+  const terminal = useTerminal();
 
   return (
     <aside
@@ -106,6 +109,14 @@ export function Sidebar() {
             collapsed={collapsed}
           />
         ))}
+        {terminal.data?.enabled && (
+          <NavItemLink
+            to="/terminal"
+            label="Terminal"
+            icon={TerminalSquare}
+            collapsed={collapsed}
+          />
+        )}
         {showLogs && (
           <NavItemLink
             to="/logs"

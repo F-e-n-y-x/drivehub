@@ -16,6 +16,7 @@ const BrowserPage = lazy(() => import("@/pages/browser").then((m) => ({ default:
 const ActivityPage = lazy(() => import("@/pages/activity").then((m) => ({ default: m.ActivityPage })));
 const SettingsPage = lazy(() => import("@/pages/settings").then((m) => ({ default: m.SettingsPage })));
 const LogsPage = lazy(() => import("@/pages/logs").then((m) => ({ default: m.LogsPage })));
+const TerminalPage = lazy(() => import("@/pages/terminal").then((m) => ({ default: m.TerminalPage })));
 const NotFoundPage = lazy(() => import("@/pages/not-found").then((m) => ({ default: m.NotFoundPage })));
 
 const queryClient = new QueryClient({
@@ -44,6 +45,7 @@ export function App() {
                   <Route path="/browser" element={<BrowserPage />} />
                   <Route path="/activity" element={<ActivityPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/terminal" element={<TerminalPage />} />
                   <Route path="/logs" element={<LogsPage />} />
                   <Route path="*" element={<NotFoundPage />} />
                 </Route>

@@ -1,5 +1,4 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { randomBytes } from "node:crypto";
 import type { AppConfig } from "../config.js";
 import type { Logger } from "../logger.js";
 
@@ -8,23 +7,28 @@ import type { Logger } from "../logger.js";
  * in-browser shell into the container (handy for `rclone config`/`authorize`,
  * S3/SFTP/WebDAV setup, and debugging without installing rclone elsewhere).
  *
- * OFF by default (ENABLE_TERMINAL): it is a full shell on an app that ships
- * unauthenticated, so it always runs behind HTTP basic auth and binds its own
- * port. Treat it as LAN/single-user only.
+ * It binds to 127.0.0.1 (not exposed) and DriveHub reverse-proxies it at
+ * `/terminal`, so it opens inline in the app with no separate port or password
+ * prompt. OFF by default (ENABLE_TERMINAL): it is a full shell on an app that
+ * ships unauthenticated, so treat it as LAN/single-user only.
  */
+// Raw ttyd is proxied here; the app's own /terminal page embeds it.
+export const TERMINAL_BASE_PATH = "/terminal-pty";
+
 export class TerminalManager {
   private child: ChildProcess | null = null;
-  private readonly password: string;
 
   constructor(
     private readonly config: AppConfig,
     private readonly logger: Logger,
-  ) {
-    this.password = config.TERMINAL_PASSWORD || randomBytes(9).toString("base64url");
-  }
+  ) {}
 
   get enabled(): boolean {
     return this.config.ENABLE_TERMINAL;
+  }
+
+  get port(): number {
+    return this.config.TERMINAL_PORT;
   }
 
   start(): void {
@@ -32,10 +36,11 @@ export class TerminalManager {
     const bin = this.config.TERMINAL_BIN ?? "ttyd";
     const args = [
       "-p", String(this.config.TERMINAL_PORT),
-      "-i", "0.0.0.0",
-      "-c", `${this.config.TERMINAL_USER}:${this.password}`,
+      "-i", "127.0.0.1", // never exposed directly — only via the DriveHub proxy
+      "-b", TERMINAL_BASE_PATH,
       "-t", "titleFixed=DriveHub terminal",
-      "-W", // writable input
+      "-t", "fontSize=14",
+      "-W", // allow input
       "bash",
     ];
     try {
@@ -57,19 +62,11 @@ export class TerminalManager {
     this.child = null;
   }
 
-  status(): {
-    enabled: boolean;
-    running: boolean;
-    port: number;
-    user: string;
-    password: string | null;
-  } {
+  status(): { enabled: boolean; running: boolean; path: string } {
     return {
       enabled: this.config.ENABLE_TERMINAL,
       running: this.child !== null && this.child.exitCode === null,
-      port: this.config.TERMINAL_PORT,
-      user: this.config.TERMINAL_USER,
-      password: this.config.ENABLE_TERMINAL ? this.password : null,
+      path: TERMINAL_BASE_PATH,
     };
   }
 }

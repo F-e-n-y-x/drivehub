@@ -18,12 +18,10 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
-      # Built-in web terminal (only needed if ENABLE_TERMINAL=true below).
-      # - "7681:7681"
     environment:
       # --- Optional in-browser terminal into the container (rclone config etc.).
-      #     Off by default; runs behind a password shown in Settings. Set to
-      #     "true" and publish 7681 above to use it. ---
+      #     Off by default. Set "true" and it appears in the sidebar, opening
+      #     inline through the app — no extra port needed. ---
       ENABLE_TERMINAL: "false"
       # --- REQUIRED: encrypts stored credentials. openssl rand -base64 32
       TOKEN_ENCRYPTION_KEY: "REPLACE_WITH_RANDOM_32B_SECRET"

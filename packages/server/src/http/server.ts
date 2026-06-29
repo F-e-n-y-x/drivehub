@@ -4,6 +4,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import cookie from "@fastify/cookie";
+import httpProxy from "@fastify/http-proxy";
 import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { nanoid } from "nanoid";
@@ -72,6 +73,18 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
   const app = Fastify({ loggerInstance: logger, disableRequestLogging: true });
   const repo = orch.repo;
   void app.register(cookie);
+
+  // Reverse-proxy the optional built-in terminal (ttyd on localhost) so it opens
+  // inline at /terminal — same origin, no extra port or basic-auth prompt. ttyd
+  // serves under its own base path, so we keep the prefix on the upstream.
+  if (orch.terminal.enabled) {
+    void app.register(httpProxy, {
+      upstream: `http://127.0.0.1:${orch.terminal.port}`,
+      prefix: "/terminal-pty",
+      rewritePrefix: "/terminal-pty",
+      websocket: true,
+    });
+  }
   // Raw binary uploads ("upload from this computer") stream straight through to
   // rclone rcat — don't buffer the body, hand the route the raw stream.
   app.addContentTypeParser("application/octet-stream", (_req, payload, done) => done(null, payload));

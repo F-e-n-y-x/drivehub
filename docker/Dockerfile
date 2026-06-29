@@ -93,8 +93,6 @@ RUN mkdir -p /data/sync /data/app \
 # NOTE: we intentionally stay root here; entrypoint.sh fixes mount ownership
 # and then drops to PUID:PGID via gosu.
 EXPOSE 8080
-# Built-in web terminal (only used when ENABLE_TERMINAL=true).
-EXPOSE 7681
 VOLUME ["/data/sync", "/data/app"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
