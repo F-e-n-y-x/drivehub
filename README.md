@@ -4,7 +4,7 @@
 
 ### Back up and sync your files between anywhere — from one clean web app.
 
-Local · NAS · USB · S3 · Backblaze B2 · Google Drive · Dropbox · OneDrive · WebDAV · SMB · SFTP
+Local · NAS · USB · S3 · Backblaze B2 · Google Drive · Dropbox · OneDrive · iCloud · WebDAV · SMB · SFTP · …any rclone backend
 
 [![image](https://img.shields.io/badge/ghcr.io-drivehub-2496ED?logo=docker&logoColor=white)](https://github.com/F-e-n-y-x/drivehub/pkgs/container/drivehub)
 [![CI](https://github.com/F-e-n-y-x/drivehub/actions/workflows/ci.yml/badge.svg)](https://github.com/F-e-n-y-x/drivehub/actions/workflows/ci.yml)
@@ -40,7 +40,8 @@ Open **http://localhost:8080** → add storage → create a job. Done.
 ```
 
 - **Storage** — anything you connect: a local/NAS/USB folder, S3, B2, Google
-  Drive, Dropbox, OneDrive, WebDAV, SMB, SFTP.
+  Drive, Dropbox, OneDrive, iCloud, WebDAV, SMB, SFTP, or any other rclone
+  backend via the **Custom** provider.
 - **Job** — moves files from a source to a destination:
   - **Mirror** — make the destination an exact copy (deletions included).
   - **Backup** — copy new/changed files, never delete anything.
@@ -90,11 +91,21 @@ default and does not bundle forks.
 
 ## Features
 
-- Many backends via rclone · real-time + scheduled + snapshot jobs
-- Versioned snapshots with retention; optional Docker-container quiescing
-- Built-in file browser, live transfer progress, run history, activity log
-- Encrypted credentials at rest · runs as a configurable user · light/dark UI
-- Self-updates rclone from the UI; tells you when a new DriveHub release is out
+- **Any backend** via rclone, incl. one-click Google Drive sign-in and a
+  **Custom** provider for everything else
+- **Jobs**: mirror / backup / two-way, on real-time / interval / daily / weekly
+  schedules, plus **versioned snapshots** with retention (and optional
+  Docker-container quiescing for consistent database backups)
+- **Tabbed file explorer** — browse any remote with preview (image zoom/pan,
+  PDF, video, audio, text), multi-select, copy/cut/paste **across tabs &
+  remotes**, new folder/file, rename, delete, download
+- **Per-remote details** — storage usage, account email, on-demand speed test,
+  rename, and one-click Browse
+- Live transfer progress, run history, searchable activity log, and a
+  **Logs page** for diagnostics (toggle in Settings → Developer)
+- Self-updates rclone from the UI; flags new DriveHub releases
+- Encrypted credentials at rest · runs as a configurable user (`PUID`/`PGID`) ·
+  brand-iconed, light/dark UI
 
 ## Develop
 

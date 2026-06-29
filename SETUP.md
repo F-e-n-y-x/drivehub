@@ -101,3 +101,34 @@ This happens if the app was previously authorized. DriveHub forces
 Set `PUBLIC_URL` to your external HTTPS URL and use that same host in the
 Authorized redirect URI. Make sure the proxy forwards `/api/events` without
 buffering so the live activity feed (SSE) streams.
+
+---
+
+# Connecting other storage
+
+Most backends need **no setup file at all** — you enter their keys in the UI
+under **Remotes → Add remote**.
+
+- **Local / NAS / USB** — pick a folder with the built-in directory browser.
+- **S3 / MinIO / Wasabi, Backblaze B2** — paste access key + secret (+ endpoint
+  for non-AWS).
+- **WebDAV / Nextcloud, SMB / CIFS, SFTP** — host + credentials.
+
+**Dropbox / OneDrive** — these use OAuth without a redirect, so you connect by
+pasting a token:
+1. On any computer with a browser, install rclone and run
+   `rclone authorize "dropbox"` (or `rclone authorize "onedrive"`).
+2. Complete the sign-in; rclone prints a token JSON.
+3. In DriveHub: **Add remote → Dropbox/OneDrive → paste the token**.
+
+**iCloud Drive (experimental)** — **Add remote → iCloud**, enter your Apple ID
+and **primary** password (not an app-specific password), then enter the 6-digit
+**2FA code** Apple sends to your devices. Note: Apple's trust tokens expire and
+may need a periodic reconnect; accounts with Advanced Data Protection aren't
+supported.
+
+**Anything else (pCloud, Mega, Koofr, Storj, Box, Yandex… or TeraBox)** — use
+**Add remote → Custom / other (advanced)**: enter the rclone backend name plus
+its config keys. Backends rclone doesn't ship (e.g. **TeraBox**) require a
+TeraBox-capable rclone build mounted into the container and selected via
+`RCLONE_BIN`; DriveHub ships official rclone and doesn't bundle forks.
