@@ -114,6 +114,19 @@ export function useSystem() {
   });
 }
 
+/**
+ * Built-in AList status (enabled / running / port). Slow-moving, so cache for
+ * ~30s. Drives the TeraBox guidance panel, the sidebar entry, and the Settings
+ * card.
+ */
+export function useAlist() {
+  return useQuery({
+    queryKey: qk.alist,
+    queryFn: api.getAlist,
+    staleTime: 30_000,
+  });
+}
+
 // --- Engine ---------------------------------------------------------------
 
 export function useEngineControl() {

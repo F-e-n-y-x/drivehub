@@ -18,6 +18,7 @@ const TYPE_LABELS: Record<RemoteType, string> = {
   icloud: "iCloud Drive",
   webdav: "WebDAV",
   alist: "AList / OpenList",
+  terabox: "TeraBox",
   smb: "SMB / NAS",
   sftp: "SFTP",
   custom: "Custom",

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Loader2, Save, Terminal } from "lucide-react";
+import { ExternalLink, Layers, Loader2, Save, Terminal } from "lucide-react";
 import type { AppSettings } from "@drivehub/types";
-import { useSettings, useSaveSettings } from "@/hooks/queries";
+import { useAlist, useSettings, useSaveSettings } from "@/hooks/queries";
+import { StatusDot } from "@/components/status-dot";
 import { UpdatesSection } from "@/components/settings/updates-section";
 import { SystemSection } from "@/components/settings/system-section";
 import { useUIStore, type ThemePreference } from "@/store/ui";
@@ -220,6 +221,8 @@ export function SettingsPage() {
 
       <SystemSection />
 
+      <AlistCard />
+
       <Card id="logs" className="scroll-mt-20">
         <CardHeader>
           <CardTitle>Developer</CardTitle>
@@ -254,5 +257,90 @@ export function SettingsPage() {
         </CardContent>
       </Card>
     </form>
+  );
+}
+
+/**
+ * Built-in AList status card. AList is a managed file-gateway subprocess used
+ * for backends rclone can't reach (TeraBox, Quark, Baidu, 115…). Shows a status
+ * dot, the port, and an "Open AList" action when running.
+ */
+function AlistCard() {
+  const { data: alist, isLoading } = useAlist();
+
+  const meta = !alist
+    ? { dot: "bg-paused", label: "Unknown" }
+    : alist.running
+      ? { dot: "bg-synced", label: "Running" }
+      : alist.enabled
+        ? { dot: "bg-pending", label: "Starting" }
+        : { dot: "bg-paused", label: "Disabled" };
+
+  const url = alist ? `http://${window.location.hostname}:${alist.port}` : "";
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Layers className="size-4 text-muted-foreground" />
+          Built-in AList
+        </CardTitle>
+        <CardDescription>
+          A bundled file-gateway run as a managed subprocess for backends rclone
+          can't reach directly (TeraBox, Quark, Baidu, 115…).
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-10 w-full rounded-lg" />
+        ) : (
+          <Row
+            label="Status"
+            description={
+              alist?.enabled
+                ? `Admin UI on port ${alist.port}.`
+                : "Not enabled."
+            }
+          >
+            <div className="flex items-center gap-3">
+              <span className="inline-flex items-center gap-2 text-sm font-medium text-foreground">
+                <StatusDot
+                  className={meta.dot}
+                  pulse={alist?.running ?? false}
+                />
+                {meta.label}
+                {alist?.enabled && (
+                  <span className="text-xs font-normal tabular-nums text-muted-foreground">
+                    :{alist.port}
+                  </span>
+                )}
+              </span>
+              {alist?.running && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.open(url, "_blank", "noopener")}
+                >
+                  <ExternalLink className="size-4" />
+                  Open AList
+                </Button>
+              )}
+            </div>
+          </Row>
+        )}
+
+        {!isLoading && alist && !alist.enabled && (
+          <p className="mt-3 rounded-lg bg-muted/50 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+            To enable: set{" "}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px] text-foreground">
+              ENABLE_ALIST=true
+            </code>{" "}
+            in your DriveHub container, map port{" "}
+            <span className="tabular-nums">5244</span>, then restart.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }

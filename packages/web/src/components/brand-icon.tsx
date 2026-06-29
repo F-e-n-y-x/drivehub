@@ -53,6 +53,7 @@ const SPEC: Record<RemoteType, BrandSpec> = {
   smb: { Icon: HardDriveDownload, brand: false },
   webdav: { Icon: Server, brand: false },
   alist: { Icon: Layers, brand: false },
+  terabox: { Icon: Cloud, color: "#0A84FF", brand: true },
   sftp: { Icon: Server, brand: false },
   custom: { Icon: SlidersHorizontal, brand: false },
 };

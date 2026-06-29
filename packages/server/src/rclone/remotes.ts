@@ -76,6 +76,14 @@ export const REMOTE_CATALOG: RemoteTypeInfo[] = [
     ],
   },
   {
+    type: "terabox",
+    label: "TeraBox",
+    oauth: false,
+    description:
+      "TeraBox has no official API. Connect it through the built-in AList: enable AList, open it to add a TeraBox storage, and it appears under your AList remote. (Advanced: a TeraBox-capable rclone build via RCLONE_BIN + a Custom remote.)",
+    fields: [],
+  },
+  {
     type: "smb",
     label: "SMB / CIFS (NAS, Windows share)",
     oauth: false,
@@ -205,10 +213,17 @@ export class RemoteService {
     return this.repo.listRemotes().map(toRemotePublic);
   }
 
-  /** Re-materialize rclone.conf from the DB (DB is the source of truth). */
+  /**
+   * Ensure every DB remote exists in rclone.conf. We SKIP remotes already
+   * present (rclone.conf lives on the mounted volume and persists), because
+   * re-running `config create` for some backends (notably iCloud) re-triggers
+   * an interactive sign-in/2FA and fails non-interactively (-20101).
+   */
   async rebuildConfig(): Promise<void> {
+    const existing = await this.rclone.configDump();
     for (const row of this.repo.listRemotes()) {
       if (row.type === "local") continue; // local needs no rclone remote
+      if (existing[row.name]) continue; // already configured — don't re-auth
       try {
         const params = this.decryptParams(row.configEnc);
         if (row.type === "custom") {

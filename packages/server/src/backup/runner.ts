@@ -103,7 +103,11 @@ export class JobRunner {
     const settings = this.d.repo.getSettings();
 
     const op = job.mode === "additive" ? "copy" : job.mode === "two_way" ? "bisync" : "sync";
-    const extra = this.commonArgs(settings, op);
+    // iCloud is heavily rate-limited (ZONE_BUSY / HTTP 423); go gentle + retry.
+    const slow =
+      this.d.repo.getRemote(job.sourceRemoteId)?.type === "icloud" ||
+      this.d.repo.getRemote(job.destRemoteId)?.type === "icloud";
+    const extra = this.commonArgs(settings, op, slow);
 
     // bisync needs a one-time --resync to establish its baseline.
     if (op === "bisync") {
@@ -126,7 +130,24 @@ export class JobRunner {
     return { bytes: acc.bytes, files: acc.files };
   }
 
-  private commonArgs(settings: AppSettings, op: "sync" | "copy" | "bisync"): string[] {
+  private commonArgs(settings: AppSettings, op: "sync" | "copy" | "bisync", slow = false): string[] {
+    // Rate-limited backends (iCloud) do better with FEWER parallel ops + more
+    // retries; everything else benefits from parallelism.
+    if (slow) {
+      const a = [
+        "--transfers", "2",
+        "--checkers", "2",
+        "--tpslimit", "4",
+        "--retries", "5",
+        "--low-level-retries", "10",
+        "--fast-list",
+      ];
+      if (settings.bandwidthLimit) a.push("--bwlimit", settings.bandwidthLimit);
+      for (const pat of settings.excludePatterns) a.push("--exclude", pat);
+      a.push("--create-empty-src-dirs");
+      if (op === "bisync") a.push("--resilient");
+      return a;
+    }
     const args: string[] = [
       "--transfers",
       String(settings.concurrency),

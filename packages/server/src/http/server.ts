@@ -16,7 +16,7 @@ import { authUrl, exchangeCodeForRclone } from "../google/oauth.js";
 import { getLogLevel, setLogLevel } from "../logger.js";
 import { logStore } from "../logs/store.js";
 
-const REMOTE_TYPES = ["local", "s3", "b2", "drive", "dropbox", "onedrive", "icloud", "webdav", "alist", "smb", "sftp", "custom"] as const;
+const REMOTE_TYPES = ["local", "s3", "b2", "drive", "dropbox", "onedrive", "icloud", "webdav", "alist", "terabox", "smb", "sftp", "custom"] as const;
 
 const SettingsSchema = z.object({
   concurrency: z.number().int().min(1).max(32),
@@ -75,6 +75,7 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
   app.get("/api/health", async () => ({ ok: true }));
   app.get("/api/status", async () => orch.getStatus());
   app.get("/api/system", async () => orch.systemInfo());
+  app.get("/api/alist", async () => orch.alist.status());
 
   app.post("/api/engine/pause", async () => {
     orch.pause();

@@ -21,6 +21,7 @@ export type RemoteType =
   | "icloud"
   | "webdav"
   | "alist"
+  | "terabox"
   | "smb"
   | "sftp"
   | "custom";
@@ -300,6 +301,12 @@ export interface UpdateStatus {
 // ---------------------------------------------------------------------------
 // System info (About / diagnostics)
 // ---------------------------------------------------------------------------
+
+export interface AlistStatus {
+  enabled: boolean;
+  running: boolean;
+  port: number;
+}
 
 export interface SystemInfo {
   appVersion: string;
