@@ -303,6 +303,15 @@ export interface UpdateStatus {
 // System info (About / diagnostics)
 // ---------------------------------------------------------------------------
 
+export interface TerminalStatus {
+  enabled: boolean;
+  running: boolean;
+  port: number;
+  user: string;
+  /** Generated/configured password; null when the terminal is disabled. */
+  password: string | null;
+}
+
 export interface SystemInfo {
   appVersion: string;
   rcloneVersion: string | null;

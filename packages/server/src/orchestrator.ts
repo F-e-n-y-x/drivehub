@@ -14,6 +14,7 @@ import { Scheduler } from "./backup/scheduler.js";
 import { UpdateService } from "./updates/service.js";
 import { MediaServerManager } from "./media/server.js";
 import { TeraBoxClient } from "./terabox/client.js";
+import { TerminalManager } from "./terminal/manager.js";
 
 const APP_VERSION = process.env.APP_VERSION ?? "0.1.0";
 const GIT_SHA = process.env.GIT_SHA ?? null;
@@ -32,6 +33,7 @@ export class Orchestrator {
   readonly updates: UpdateService;
   readonly media: MediaServerManager;
   readonly terabox: TeraBoxClient;
+  readonly terminal: TerminalManager;
   private readonly scheduler: Scheduler;
 
   private mode: "running" | "paused" = "running";
@@ -71,6 +73,7 @@ export class Orchestrator {
     );
     this.terabox = new TeraBoxClient(logger);
     this.remotes.setTeraboxClient(this.terabox);
+    this.terminal = new TerminalManager(config, logger);
   }
 
   async start(): Promise<void> {
@@ -84,6 +87,7 @@ export class Orchestrator {
     }
     // Re-materialize rclone.conf from the DB (the source of truth).
     await this.remotes.rebuildConfig();
+    this.terminal.start();
     this.scheduler.start();
     this.broadcastStatus();
 
@@ -97,6 +101,7 @@ export class Orchestrator {
   async stop(): Promise<void> {
     this.scheduler.stop();
     this.media.stopAll();
+    this.terminal.stop();
   }
 
   pause(): void {

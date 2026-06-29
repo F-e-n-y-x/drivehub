@@ -9,7 +9,13 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+      # Built-in web terminal (only needed if ENABLE_TERMINAL=true below).
+      # - "7681:7681"
     environment:
+      # Optional in-browser shell into the container (rclone config, debugging).
+      # Off by default; runs behind a password shown in Settings. Publish 7681
+      # above when enabling. ENABLE_TERMINAL: "true"
+      ENABLE_TERMINAL: ${ENABLE_TERMINAL:-false}
       # --- Required ---
       # Encrypts stored remote credentials/tokens. Generate: openssl rand -base64 32
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY}

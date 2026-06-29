@@ -19,7 +19,13 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
-import { SimpleSelect } from "@/components/ui/select";
+import {
+  SimpleSelect,
+  SelectRoot,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 import { Field } from "@/components/field";
 import { RemoteIcon } from "@/components/brand-icon";
 import { PathPickerDialog } from "@/components/path-picker-dialog";
@@ -27,6 +33,7 @@ import {
   modeHelp,
   modeLabel,
   remoteDisplayName,
+  remoteSecondaryLabel,
   WEEKDAYS,
 } from "@/lib/remotes";
 import { useJobMutations, useRemotes } from "@/hooks/queries";
@@ -324,34 +331,33 @@ function Endpoint({
   onPath: (path: string) => void;
   onBrowse: () => void;
 }) {
+  const selected = remotes.find((r) => r.id === remoteId);
   return (
     <div className="rounded-lg border border-border p-4">
       <p className="mb-3 text-[13px] font-semibold text-foreground">{title}</p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Remote" required>
-          <SimpleSelect
-            value={remoteId}
-            onValueChange={onRemote}
-            placeholder="Select a remote…"
-            aria-label={`${title} remote`}
-            options={remotes.map((r) => {
-              const email = r.summary.email?.trim();
-              return {
-                value: r.id,
-                label: (
-                  <span className="flex min-w-0 items-center gap-2">
-                    <RemoteIcon type={r.type} className="size-4" />
-                    <span className="truncate">{r.label}</span>
-                    {email && (
-                      <span className="truncate text-muted-foreground">
-                        · {email}
-                      </span>
-                    )}
-                  </span>
-                ),
-              };
-            })}
-          />
+          <SelectRoot value={remoteId} onValueChange={onRemote}>
+            <SelectTrigger
+              aria-label={`${title} remote`}
+              className="h-auto min-h-[3.25rem] py-1.5"
+            >
+              {selected ? (
+                <RemoteLines remote={selected} />
+              ) : (
+                <span className="text-muted-foreground/70">
+                  Select a remote…
+                </span>
+              )}
+            </SelectTrigger>
+            <SelectContent>
+              {remotes.map((r) => (
+                <SelectItem key={r.id} value={r.id} className="py-1.5">
+                  <RemoteLines remote={r} />
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </SelectRoot>
         </Field>
         <Field label="Path">
           <div className="flex gap-2">
@@ -374,6 +380,28 @@ function Endpoint({
         </Field>
       </div>
     </div>
+  );
+}
+
+/**
+ * Two-line remote presentation for the job dialog's Source/Destination pickers,
+ * mirroring the Browser page's RemoteSelector: provider icon + remote name on
+ * the first line, account email (or provider type) on a muted second line.
+ */
+function RemoteLines({ remote }: { remote: RemotePublic }) {
+  const secondary = remoteSecondaryLabel(remote);
+  return (
+    <span className="flex min-w-0 items-center gap-2 text-left">
+      <RemoteIcon type={remote.type} className="size-5 shrink-0" />
+      <span className="flex min-w-0 flex-1 flex-col leading-tight">
+        <span className="truncate text-sm font-medium text-foreground">
+          {remote.label}
+        </span>
+        <span className="truncate text-xs text-muted-foreground">
+          {secondary}
+        </span>
+      </span>
+    </span>
   );
 }
 

@@ -114,6 +114,14 @@ export function useSystem() {
   });
 }
 
+export function useTerminal() {
+  return useQuery({
+    queryKey: ["terminal"],
+    queryFn: api.getTerminal,
+    staleTime: 30_000,
+  });
+}
+
 // --- Engine ---------------------------------------------------------------
 
 export function useEngineControl() {

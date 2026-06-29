@@ -33,6 +33,19 @@ const EnvSchema = z.object({
 
   CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
 
+  // Built-in web terminal (ttyd) into the container — off by default because it
+  // is a full shell on an app that ships unauthenticated. When enabled it runs
+  // with HTTP basic auth (password generated if not provided).
+  ENABLE_TERMINAL: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
+  TERMINAL_PORT: z.coerce.number().int().positive().default(7681),
+  TERMINAL_BIN: z.string().optional(),
+  TERMINAL_USER: z.string().default("admin"),
+  /** Optional: set the terminal password (else one is generated and shown). */
+  TERMINAL_PASSWORD: z.string().optional(),
+
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace"])
     .default("info"),

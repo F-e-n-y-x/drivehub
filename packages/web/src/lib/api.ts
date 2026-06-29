@@ -16,6 +16,7 @@ import type {
   RemoteType,
   RemoteTypeInfo,
   SystemInfo,
+  TerminalStatus,
   UpdateStatus,
 } from "@drivehub/types";
 
@@ -336,6 +337,7 @@ export const api = {
 
   // System info (About / diagnostics)
   getSystem: () => request<SystemInfo>("/api/system"),
+  getTerminal: () => request<TerminalStatus>("/api/terminal"),
 
   // Logs (in-app developer viewer)
   getLogs: (limit?: number) =>

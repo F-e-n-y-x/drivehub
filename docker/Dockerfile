@@ -58,14 +58,14 @@ WORKDIR /app
 # Storage engine = rclone-extra (a community rclone fork: all official backends
 # PLUS native terabox/teldrive/alldebrid). unzip/ca-certificates fetch it.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends gosu ca-certificates unzip curl \
+  && apt-get install -y --no-install-recommends gosu ca-certificates unzip curl bash \
   && rm -rf /var/lib/apt/lists/* \
   && useradd --uid 10001 --create-home --shell /usr/sbin/nologin drivehub \
   && ARCH="$(dpkg --print-architecture)" \
   && case "$ARCH" in \
-       amd64) RCLONE_ARCH=amd64 ;; \
-       arm64) RCLONE_ARCH=arm64 ;; \
-       *) RCLONE_ARCH="$ARCH" ;; \
+       amd64) RCLONE_ARCH=amd64; TTYD_ARCH=x86_64 ;; \
+       arm64) RCLONE_ARCH=arm64; TTYD_ARCH=aarch64 ;; \
+       *) RCLONE_ARCH="$ARCH"; TTYD_ARCH="$ARCH" ;; \
      esac \
   && curl -fsSL "https://github.com/gulp79/rclone-extra/releases/latest/download/rclone-linux-${RCLONE_ARCH}.zip" -o /tmp/rclone.zip \
   && unzip -o /tmp/rclone.zip -d /tmp/rclone-x \
@@ -73,7 +73,11 @@ RUN apt-get update \
   && rm -rf /tmp/rclone-x \
   && chmod +x /usr/local/bin/rclone \
   && rm /tmp/rclone.zip \
-  && rclone version
+  && rclone version \
+  # Bundle ttyd for the optional built-in web terminal (ENABLE_TERMINAL=true).
+  && curl -fsSL "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.${TTYD_ARCH}" -o /usr/local/bin/ttyd \
+  && chmod +x /usr/local/bin/ttyd \
+  && (ttyd --version || echo "ttyd bundle skipped")
 
 # Server runtime (code + pruned prod deps) and the built web assets.
 COPY --from=build /export/server/dist ./dist
@@ -89,6 +93,8 @@ RUN mkdir -p /data/sync /data/app \
 # NOTE: we intentionally stay root here; entrypoint.sh fixes mount ownership
 # and then drops to PUID:PGID via gosu.
 EXPOSE 8080
+# Built-in web terminal (only used when ENABLE_TERMINAL=true).
+EXPOSE 7681
 VOLUME ["/data/sync", "/data/app"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

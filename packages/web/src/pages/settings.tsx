@@ -5,6 +5,7 @@ import type { AppSettings } from "@drivehub/types";
 import { useSettings, useSaveSettings } from "@/hooks/queries";
 import { UpdatesSection } from "@/components/settings/updates-section";
 import { SystemSection } from "@/components/settings/system-section";
+import { TerminalCard } from "@/components/settings/terminal-card";
 import { useUIStore, type ThemePreference } from "@/store/ui";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -241,6 +242,8 @@ export function SettingsPage() {
       </Card>
 
       <UpdatesSection />
+
+      <TerminalCard />
 
       <SystemSection />
 

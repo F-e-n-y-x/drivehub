@@ -80,6 +80,7 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
   app.get("/api/health", async () => ({ ok: true }));
   app.get("/api/status", async () => orch.getStatus());
   app.get("/api/system", async () => orch.systemInfo());
+  app.get("/api/terminal", async () => orch.terminal.status());
 
   app.post("/api/engine/pause", async () => {
     orch.pause();

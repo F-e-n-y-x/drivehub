@@ -17,6 +17,7 @@ export function PathPickerDialog({
   remoteLabel,
   initialPath,
   onSelect,
+  readOnly = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -24,6 +25,8 @@ export function PathPickerDialog({
   remoteLabel: string;
   initialPath: string;
   onSelect: (path: string) => void;
+  /** Hide folder create/rename/delete actions (read-only source remotes). */
+  readOnly?: boolean;
 }) {
   const [path, setPath] = useState(initialPath);
 
@@ -43,6 +46,7 @@ export function PathPickerDialog({
           remoteId={remoteId}
           initialPath={initialPath}
           onPathChange={setPath}
+          readOnly={readOnly}
         />
 
         <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs">
