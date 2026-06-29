@@ -25,6 +25,12 @@ services:
       # --- REQUIRED: the URL you open DriveHub at. MUST match the Google
       #     redirect URI <PUBLIC_URL>/api/auth/google/callback ---
       PUBLIC_URL: "http://localhost:8080"
+      # --- Permissions ---
+      # The user the app runs as. To back up ROOT-OWNED data (e.g. system
+      # AppData), set both to 0 so it can read everything and write its DB.
+      # Otherwise set them to the uid:gid that owns your data.
+      PUID: "0"
+      PGID: "0"
       # --- Optional tuning ---
       POLL_INTERVAL_MS: "7000"
       CONCURRENCY: "4"

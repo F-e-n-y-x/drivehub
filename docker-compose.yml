@@ -16,6 +16,11 @@ services:
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY}
       # Public URL the browser uses (must match the Google OAuth redirect host).
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      # --- Permissions ---
+      # User the app runs as. Set both to 0 to back up root-owned data (e.g.
+      # system AppData); otherwise use the uid:gid that owns your folders.
+      PUID: ${PUID:-10001}
+      PGID: ${PGID:-10001}
       # --- Optional tuning ---
       POLL_INTERVAL_MS: ${POLL_INTERVAL_MS:-7000}
       CONCURRENCY: ${CONCURRENCY:-4}
