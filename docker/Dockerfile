@@ -41,24 +41,36 @@ ENV NODE_ENV=production
 ENV HUB_PATH=/data/sync
 ENV DATA_DIR=/data/app
 ENV WEB_DIST=/app/web
+# Runtime user/group ids. Override to match host ownership, or set 0 to run as
+# root (needed to read root-owned source data such as system AppData).
+ENV PUID=10001
+ENV PGID=10001
 WORKDIR /app
 
-# Non-root runtime user.
-RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin drivehub
+# gosu lets the root entrypoint drop privileges after fixing mount permissions.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends gosu \
+  && rm -rf /var/lib/apt/lists/* \
+  && useradd --uid 10001 --create-home --shell /usr/sbin/nologin drivehub
 
 # Server runtime (code + pruned prod deps) and the built web assets.
 COPY --from=build /export/server/dist ./dist
 COPY --from=build /export/server/node_modules ./node_modules
 COPY --from=build /export/server/package.json ./package.json
 COPY --from=build /repo/packages/web/dist ./web
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
-RUN mkdir -p /data/sync /data/app && chown -R drivehub:drivehub /app /data
-USER drivehub
+RUN mkdir -p /data/sync /data/app \
+  && chown -R drivehub:drivehub /app /data \
+  && chmod +x /usr/local/bin/entrypoint.sh
 
+# NOTE: we intentionally stay root here; entrypoint.sh fixes mount ownership
+# and then drops to PUID:PGID via gosu.
 EXPOSE 8080
 VOLUME ["/data/sync", "/data/app"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8080)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["node", "dist/index.js"]
