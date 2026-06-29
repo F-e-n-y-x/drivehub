@@ -155,6 +155,7 @@ export const REMOTE_CATALOG: RemoteTypeInfo[] = [
 const RCLONE_BACKEND: Partial<Record<RemoteType, string>> = {
   icloud: "iclouddrive",
   alist: "webdav", // AList/OpenList is reached via its WebDAV endpoint
+  terabox: "webdav", // TeraBox is served through the built-in AList over WebDAV
 };
 function rcloneBackend(type: RemoteType): string {
   return RCLONE_BACKEND[type] ?? type;
@@ -252,8 +253,10 @@ export class RemoteService {
     const name = sanitizeName(input.label, existing);
     const params = pruneEmpty(input.params);
 
-    // AList speaks generic WebDAV; rclone needs the vendor hint.
-    if (input.type === "alist" && !params.vendor) params.vendor = "other";
+    // AList/TeraBox-via-AList speak generic WebDAV; rclone needs the vendor hint.
+    if ((input.type === "alist" || input.type === "terabox") && !params.vendor) {
+      params.vendor = "other";
+    }
 
     let summary: Record<string, string>;
     if (input.type === "custom") {

@@ -142,6 +142,9 @@ export const api = {
       method: "POST",
       json: body,
     }),
+  // Native TeraBox: DriveHub configures the built-in AList for the user.
+  addTeraBox: (body: { label: string; cookie: string }) =>
+    request<RemotePublic>("/api/remotes/terabox", { method: "POST", json: body }),
   renameRemote: (id: string, label: string) =>
     request<RemotePublic>(`/api/remotes/${encodeURIComponent(id)}`, {
       method: "PATCH",

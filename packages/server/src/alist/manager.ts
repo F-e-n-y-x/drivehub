@@ -6,7 +6,9 @@ import type { AppConfig } from "../config.js";
 import { decryptSecret, encryptSecret } from "../crypto.js";
 import type { Repo } from "../db/repo.js";
 import type { Logger } from "../logger.js";
+import type { RemotePublic } from "@drivehub/types";
 import type { RemoteService } from "../rclone/remotes.js";
+import { AlistApi } from "./api.js";
 
 const PW_KEY = "alist_admin_pw";
 const REMOTE_KEY = "alist_remote_created";
@@ -88,6 +90,39 @@ export class AlistManager {
     this.running = false;
     this.child?.kill();
     this.child = null;
+  }
+
+  /**
+   * Add an AList-backed storage and expose it as a native DriveHub remote.
+   * DriveHub talks to the AList API for the user — they never open AList.
+   * `addition` is the AList driver config (e.g. { cookie } for Terabox).
+   */
+  async addStorage(input: {
+    label: string;
+    driver: string;
+    addition: Record<string, unknown>;
+  }): Promise<RemotePublic> {
+    if (!this.enabled) throw new Error("Enable the built-in AList first (set ENABLE_ALIST=true and restart).");
+    if (!this.running) throw new Error("The built-in AList isn't running yet — try again in a moment.");
+    const pw = this.currentPassword();
+    if (!pw) throw new Error("AList admin password unavailable.");
+
+    const api = new AlistApi(`http://127.0.0.1:${this.config.ALIST_PORT}`, pw, this.logger);
+    const slug = input.label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "store";
+    const mountPath = `/${slug}-${nanoid(4)}`;
+    await api.createStorage({ mountPath, driver: input.driver, addition: input.addition });
+
+    // Expose it as a WebDAV-backed DriveHub remote scoped to that mount.
+    return this.remotes.create({
+      type: input.driver.toLowerCase() === "terabox" ? "terabox" : "alist",
+      label: input.label,
+      params: {
+        url: `http://127.0.0.1:${this.config.ALIST_PORT}/dav${mountPath}`,
+        user: "admin",
+        pass: pw,
+        vendor: "other",
+      },
+    });
   }
 
   private ensurePassword(): string {

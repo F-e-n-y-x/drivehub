@@ -241,7 +241,17 @@ export function useRemoteMutations() {
     },
   });
 
-  return { create, createOAuth, remove, test, startIcloud, verifyIcloud };
+  const addTeraBox = useMutation({
+    mutationFn: (body: { label: string; cookie: string }) => api.addTeraBox(body),
+    onSuccess: (r) => {
+      refresh();
+      toast.success("TeraBox connected", { description: r.label });
+    },
+    onError: (e: Error) =>
+      toast.error("Couldn't connect TeraBox", { description: e.message }),
+  });
+
+  return { create, createOAuth, remove, test, startIcloud, verifyIcloud, addTeraBox };
 }
 
 /**

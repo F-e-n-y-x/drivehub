@@ -613,10 +613,17 @@ function TeraBoxPanel({
   onClose: () => void;
 }) {
   const { data: alist, isLoading } = useAlist();
+  const { addTeraBox } = useRemoteMutations();
   const ready = alist?.enabled && alist.running;
-  const adminUrl = alist
-    ? `http://${window.location.hostname}:${alist.port}`
-    : "";
+  const [label, setLabel] = useState("TeraBox");
+  const [cookie, setCookie] = useState("");
+
+  const submit = () => {
+    addTeraBox.mutate(
+      { label: label.trim() || "TeraBox", cookie: cookie.trim() },
+      { onSuccess: () => onClose() },
+    );
+  };
 
   return (
     <>
@@ -633,8 +640,8 @@ function TeraBoxPanel({
           Connect TeraBox
         </DialogTitle>
         <DialogDescription>
-          TeraBox has no official API, so DriveHub connects it through the
-          built-in AList.
+          Paste your TeraBox cookie — DriveHub wires it up through the built-in
+          AList for you.
         </DialogDescription>
       </DialogHeader>
 
@@ -643,40 +650,33 @@ function TeraBoxPanel({
           <Skeleton className="h-24 w-full rounded-lg" />
         ) : ready ? (
           <>
+            <Field label="Label">
+              <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="TeraBox" />
+            </Field>
+            <Field label="Cookie">
+              <Textarea
+                value={cookie}
+                onChange={(e) => setCookie(e.target.value)}
+                placeholder="Paste the full Cookie header (must include ndus=…)"
+                className="min-h-[96px] font-mono text-xs"
+                spellCheck={false}
+              />
+            </Field>
             <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/40 p-3">
               <Layers className="mt-0.5 size-4 shrink-0 text-accent" />
               <p className="text-[13px] text-muted-foreground leading-relaxed">
-                Add a TeraBox storage in AList; it then appears under your{" "}
-                <span className="font-medium text-foreground">
-                  AList (built-in)
-                </span>{" "}
-                remote here.
+                Sign in at terabox.com, open DevTools (F12) → Network → click any
+                request → copy the full <span className="font-medium text-foreground">Cookie</span>{" "}
+                header. DriveHub adds it as a native TeraBox remote.
               </p>
             </div>
-            {alist?.adminPassword && (
-              <div className="rounded-lg border border-border bg-muted/40 p-3 text-[13px]">
-                <p className="mb-1.5 font-medium text-foreground">Sign in to AList with</p>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">User</span>
-                  <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
-                    {alist.adminUser}
-                  </code>
-                </div>
-                <div className="mt-1 flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">Password</span>
-                  <code className="max-w-[60%] truncate rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
-                    {alist.adminPassword}
-                  </code>
-                </div>
-              </div>
-            )}
             <Button
               variant="accent"
               className="w-full"
-              onClick={() => window.open(adminUrl, "_blank", "noopener")}
+              disabled={!cookie.trim() || addTeraBox.isPending}
+              onClick={submit}
             >
-              Open AList to add TeraBox
-              <ExternalLink className="size-3.5" />
+              {addTeraBox.isPending ? "Connecting…" : "Connect TeraBox"}
             </Button>
           </>
         ) : (
