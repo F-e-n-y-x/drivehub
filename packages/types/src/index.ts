@@ -306,6 +306,21 @@ export interface SystemInfo {
 // REST helpers
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Logs (in-app debug viewer)
+// ---------------------------------------------------------------------------
+
+export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
+
+export interface LogEntry {
+  id: number;
+  time: number;
+  level: LogLevel;
+  msg: string;
+  /** Compact extra context (e.g. "jobId=…, err=…"). */
+  context?: string;
+}
+
 export interface ApiError {
   error: string;
   message: string;

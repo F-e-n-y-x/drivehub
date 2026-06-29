@@ -19,6 +19,47 @@ export interface RcloneStats {
   transferring?: Array<{ name?: string }>;
 }
 
+export interface RcloneConfigQuestion {
+  /** Opaque state to pass to the next continue call ("" when finished). */
+  state: string;
+  /** Name of the option being requested (e.g. "config_2fa"), if any. */
+  optionName: string | null;
+  /** Human-readable prompt for the requested option. */
+  help: string;
+  /** Whether the input is a password/secret. */
+  secret: boolean;
+  error: string;
+  done: boolean;
+}
+
+function parseConfigQuestion(stdout: string, stderr: string, code: number): RcloneConfigQuestion {
+  const text = stdout.trim();
+  if (text.startsWith("{")) {
+    try {
+      const obj = JSON.parse(text) as {
+        State?: string;
+        Option?: { Name?: string; Help?: string; IsPassword?: boolean };
+        Error?: string;
+      };
+      const state = obj.State ?? "";
+      const error = obj.Error ?? "";
+      return {
+        state,
+        optionName: obj.Option?.Name ?? null,
+        help: obj.Option?.Help ?? "",
+        secret: obj.Option?.IsPassword ?? false,
+        error,
+        done: state === "" && !error,
+      };
+    } catch {
+      /* fall through */
+    }
+  }
+  // No JSON question: success (code 0) or a hard error.
+  const error = code === 0 ? "" : stderr.split("\n").filter(Boolean).pop()?.slice(0, 300) ?? "config failed";
+  return { state: "", optionName: null, help: "", secret: false, error, done: code === 0 };
+}
+
 export interface AboutResult {
   total: number | null;
   used: number | null;
@@ -110,6 +151,37 @@ export class RcloneService {
 
   async configDelete(name: string): Promise<void> {
     await this.run(["config", "delete", name]);
+  }
+
+  /**
+   * Start an interactive (state-machine) config create — used for backends like
+   * iCloud that need a 2FA challenge. Returns the next question, or done.
+   */
+  async configCreateInteractive(
+    name: string,
+    type: string,
+    params: Record<string, string>,
+  ): Promise<RcloneConfigQuestion> {
+    const kv: string[] = [];
+    for (const [k, v] of Object.entries(params)) kv.push(k, v);
+    const { code, stdout, stderr } = await this.run(
+      ["config", "create", name, type, ...kv, "--non-interactive"],
+      { redactFrom: 4 },
+    );
+    return parseConfigQuestion(stdout, stderr, code);
+  }
+
+  /** Continue an interactive config flow by answering the current question. */
+  async configContinue(
+    name: string,
+    state: string,
+    result: string,
+  ): Promise<RcloneConfigQuestion> {
+    const { code, stdout, stderr } = await this.run(
+      ["config", "update", name, "--non-interactive", "--continue", "--state", state, "--result", result],
+      { redactFrom: 3 },
+    );
+    return parseConfigQuestion(stdout, stderr, code);
   }
 
   async configDump(): Promise<Record<string, Record<string, string>>> {

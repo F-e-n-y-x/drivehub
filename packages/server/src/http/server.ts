@@ -13,6 +13,8 @@ import { toJobPublic, toJobRun } from "../db/repo.js";
 import type { Logger } from "../logger.js";
 import type { Orchestrator } from "../orchestrator.js";
 import { authUrl, exchangeCodeForRclone } from "../google/oauth.js";
+import { getLogLevel, setLogLevel } from "../logger.js";
+import { logStore } from "../logs/store.js";
 
 const REMOTE_TYPES = ["local", "s3", "b2", "drive", "dropbox", "onedrive", "icloud", "webdav", "smb", "sftp"] as const;
 
@@ -126,6 +128,45 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
       return remote;
     } catch (e) {
       return reply.code(400).send({ error: "remote_create_failed", message: String((e as Error).message ?? e) });
+    }
+  });
+
+  // iCloud needs an interactive 2FA step, so it has its own two-call flow.
+  app.post("/api/remotes/icloud/start", async (req, reply) => {
+    const b = (req.body ?? {}) as { label?: string; apple_id?: string; password?: string };
+    if (!b.apple_id || !b.password) {
+      return reply.code(400).send({ error: "bad_request", message: "apple_id and password required" });
+    }
+    try {
+      const res = await orch.remotes.startIcloud({
+        label: b.label || "iCloud Drive",
+        appleId: b.apple_id,
+        password: b.password,
+      });
+      if (res.status === "done") {
+        orch.onRemotesChanged();
+        orch.bus.emit({ type: "remote", payload: res.remote });
+      }
+      return res;
+    } catch (e) {
+      return reply.code(400).send({ error: "icloud_failed", message: String((e as Error).message ?? e) });
+    }
+  });
+
+  app.post("/api/remotes/icloud/verify", async (req, reply) => {
+    const b = (req.body ?? {}) as { sessionId?: string; code?: string };
+    if (!b.sessionId || !b.code) {
+      return reply.code(400).send({ error: "bad_request", message: "sessionId and code required" });
+    }
+    try {
+      const res = await orch.remotes.verifyIcloud(b.sessionId, b.code);
+      if (res.status === "done") {
+        orch.onRemotesChanged();
+        orch.bus.emit({ type: "remote", payload: res.remote });
+      }
+      return res;
+    } catch (e) {
+      return reply.code(400).send({ error: "icloud_failed", message: String((e as Error).message ?? e) });
     }
   });
 
@@ -302,6 +343,50 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     return repo.recentActivity(limit, q.search);
   });
 
+  // ----- logs (Developer panel) ------------------------------------------
+  const LogLevelSchema = z.object({
+    level: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]),
+  });
+
+  app.get("/api/logs", async (req) => {
+    const q = req.query as { limit?: string };
+    const limit = Math.min(Number(q.limit ?? 500) || 500, 2000);
+    return logStore.recent(limit);
+  });
+
+  app.get("/api/logs/level", async () => ({ level: getLogLevel() }));
+  app.put("/api/logs/level", async (req, reply) => {
+    const parsed = LogLevelSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "bad_request", message: parsed.error.message });
+    setLogLevel(parsed.data.level);
+    logger.info({ level: parsed.data.level }, "log level changed");
+    return { level: getLogLevel() };
+  });
+
+  app.get("/api/logs/download", async (_req, reply) => {
+    void reply.header("Content-Type", "text/plain; charset=utf-8");
+    void reply.header("Content-Disposition", `attachment; filename="drivehub-logs.txt"`);
+    return logStore.asText();
+  });
+
+  app.get("/api/logs/stream", (req, reply) => {
+    reply.raw.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    reply.raw.write(`: connected\n\n`);
+    const unsubscribe = logStore.subscribe((entry) => {
+      reply.raw.write(`data: ${JSON.stringify(entry)}\n\n`);
+    });
+    const heartbeat = setInterval(() => reply.raw.write(`: ping\n\n`), 25000);
+    req.raw.on("close", () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+    });
+  });
+
   // ----- Google Drive OAuth bridge --------------------------------------
   app.get("/api/oauth/google/start", async (req, reply) => {
     if (!config.googleConfigured) {
@@ -327,6 +412,7 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
         type: "drive",
         label,
         tokenJson: conn.rcloneTokenJson,
+        knownEmail: conn.email,
         extra: {
           client_id: config.GOOGLE_CLIENT_ID ?? "",
           client_secret: config.GOOGLE_CLIENT_SECRET ?? "",

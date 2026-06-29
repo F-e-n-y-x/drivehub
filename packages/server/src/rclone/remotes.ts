@@ -1,4 +1,5 @@
 import path from "node:path";
+import { nanoid } from "nanoid";
 import type {
   RemoteListing,
   RemotePublic,
@@ -222,11 +223,13 @@ export class RemoteService {
     label: string;
     tokenJson: string;
     extra?: Record<string, string>;
+    /** Email already known from the OAuth flow (preferred over a lookup). */
+    knownEmail?: string | null;
   }): Promise<RemotePublic> {
     const params: Record<string, string> = { token: input.tokenJson, ...(input.extra ?? {}) };
     const remote = await this.create({ type: input.type, label: input.label, params });
-    // Best-effort: capture the account email/identity so the UI can show it.
-    const email = await this.fetchAccountEmail(remote.name);
+    // Prefer the email from the OAuth flow; fall back to an rclone lookup.
+    const email = input.knownEmail ?? (await this.fetchAccountEmail(remote.name));
     if (email) {
       const row = this.repo.getRemote(remote.id);
       if (row) {
@@ -236,6 +239,69 @@ export class RemoteService {
       }
     }
     return remote;
+  }
+
+  // ----- iCloud (interactive 2FA) ----------------------------------------
+  private icloudPending = new Map<string, { name: string; label: string; appleId: string; state: string }>();
+
+  /** Step 1: submit Apple ID + password; returns a 2FA prompt or completes. */
+  async startIcloud(input: { label: string; appleId: string; password: string }): Promise<
+    { status: "need_2fa"; sessionId: string; prompt: string } | { status: "done"; remote: RemotePublic }
+  > {
+    const existing = new Set(this.repo.listRemotes().map((r) => r.name));
+    const name = sanitizeName(input.label || "icloud", existing);
+    const q = await this.rclone.configCreateInteractive(name, "iclouddrive", {
+      apple_id: input.appleId,
+      password: input.password,
+    });
+    if (q.error && !q.optionName) {
+      await this.rclone.configDelete(name).catch(() => {});
+      throw new Error(q.error);
+    }
+    if (q.done) {
+      const remote = await this.finalizeIcloud(name, input.label, input.appleId);
+      return { status: "done", remote };
+    }
+    const sessionId = `ic_${nanoid(10)}`;
+    this.icloudPending.set(sessionId, { name, label: input.label, appleId: input.appleId, state: q.state });
+    return {
+      status: "need_2fa",
+      sessionId,
+      prompt: q.help || "Enter the 6-digit verification code sent to your Apple devices.",
+    };
+  }
+
+  /** Step 2: submit the 2FA code. */
+  async verifyIcloud(sessionId: string, code: string): Promise<
+    { status: "need_2fa"; sessionId: string; prompt: string } | { status: "done"; remote: RemotePublic }
+  > {
+    const session = this.icloudPending.get(sessionId);
+    if (!session) throw new Error("Session expired — start the iCloud connection again.");
+    const q = await this.rclone.configContinue(session.name, session.state, code);
+    if (q.error && !q.optionName) {
+      throw new Error(q.error);
+    }
+    if (q.done) {
+      this.icloudPending.delete(sessionId);
+      const remote = await this.finalizeIcloud(session.name, session.label, session.appleId);
+      return { status: "done", remote };
+    }
+    session.state = q.state;
+    return { status: "need_2fa", sessionId, prompt: q.help || "Enter the verification code." };
+  }
+
+  private async finalizeIcloud(name: string, label: string, appleId: string): Promise<RemotePublic> {
+    const dump = await this.rclone.configDump();
+    const params = dump[name] ?? {};
+    const row = this.repo.insertRemote({
+      name,
+      type: "icloud",
+      label,
+      configEnc: encryptSecret(JSON.stringify(params), this.config.TOKEN_ENCRYPTION_KEY),
+      summary: { email: appleId },
+      status: "ok",
+    });
+    return toRemotePublic(row);
   }
 
   private async fetchAccountEmail(remoteName: string): Promise<string | null> {
