@@ -28,9 +28,6 @@ export type RemoteType =
 
 export type RemoteStatus = "ok" | "error" | "unconfigured";
 
-/** Whether a remote type authenticates via OAuth (needs the connect flow). */
-export const OAUTH_REMOTE_TYPES: RemoteType[] = ["drive", "dropbox", "onedrive"];
-
 export interface RemotePublic {
   id: string;
   /** rclone remote name (sanitized, unique). */
@@ -303,15 +300,6 @@ export interface UpdateStatus {
 // ---------------------------------------------------------------------------
 // System info (About / diagnostics)
 // ---------------------------------------------------------------------------
-
-export interface AlistStatus {
-  enabled: boolean;
-  running: boolean;
-  port: number;
-  /** Credentials to sign in to the built-in AList admin UI. */
-  adminUser: string;
-  adminPassword: string | null;
-}
 
 export interface SystemInfo {
   appVersion: string;

@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ExternalLink,
-  Layers,
   Loader2,
   ShieldCheck,
 } from "lucide-react";
@@ -28,7 +27,6 @@ import { CustomRemoteForm } from "@/components/custom-remote-form";
 import { FolderPicker } from "@/components/folder-picker";
 import { RemoteIcon } from "@/components/brand-icon";
 import {
-  useAlist,
   useRemoteCatalog,
   useRemoteMutations,
   useRemotes,
@@ -591,129 +589,5 @@ export function AddRemoteDialog({
         )}
       </DialogContent>
     </Dialog>
-  );
-}
-
-/**
- * TeraBox guidance panel. TeraBox has no official API, so DriveHub reaches it
- * through the built-in AList rather than creating a remote directly — this
- * panel explains that and routes the user to the right next step instead of
- * showing the (empty) generic create form.
- */
-function TeraBoxPanel({
-  onBack,
-  onClose,
-}: {
-  onBack: () => void;
-  onClose: () => void;
-}) {
-  const { data: alist, isLoading } = useAlist();
-  const { addTeraBox } = useRemoteMutations();
-  const ready = alist?.enabled && alist.running;
-  const [label, setLabel] = useState("TeraBox");
-  const [cookie, setCookie] = useState("");
-
-  const submit = () => {
-    addTeraBox.mutate(
-      { label: label.trim() || "TeraBox", cookie: cookie.trim() },
-      { onSuccess: () => onClose() },
-    );
-  };
-
-  return (
-    <>
-      <DialogHeader>
-        <button
-          onClick={onBack}
-          className="mb-1 inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-3.5" />
-          All providers
-        </button>
-        <DialogTitle className="flex items-center gap-2">
-          <RemoteIcon type="terabox" className="size-4" />
-          Connect TeraBox
-        </DialogTitle>
-        <DialogDescription>
-          Paste your TeraBox cookie — DriveHub wires it up through the built-in
-          AList for you.
-        </DialogDescription>
-      </DialogHeader>
-
-      <div className="space-y-3.5">
-        {isLoading ? (
-          <Skeleton className="h-24 w-full rounded-lg" />
-        ) : ready ? (
-          <>
-            <Field label="Label">
-              <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="TeraBox" />
-            </Field>
-            <Field label="Cookie">
-              <Textarea
-                value={cookie}
-                onChange={(e) => setCookie(e.target.value)}
-                placeholder="Paste the full Cookie header (must include ndus=…)"
-                className="min-h-[96px] font-mono text-xs"
-                spellCheck={false}
-              />
-            </Field>
-            <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/40 p-3">
-              <Layers className="mt-0.5 size-4 shrink-0 text-accent" />
-              <p className="text-[13px] text-muted-foreground leading-relaxed">
-                Sign in at terabox.com, open DevTools (F12) → Network → click any
-                request → copy the full <span className="font-medium text-foreground">Cookie</span>{" "}
-                header. DriveHub adds it as a native TeraBox remote.
-              </p>
-            </div>
-            <Button
-              variant="accent"
-              className="w-full"
-              disabled={!cookie.trim() || addTeraBox.isPending}
-              onClick={submit}
-            >
-              {addTeraBox.isPending ? "Connecting…" : "Connect TeraBox"}
-            </Button>
-          </>
-        ) : (
-          <div className="space-y-3 rounded-lg border border-border bg-muted/40 p-3.5 text-[13px] text-muted-foreground leading-relaxed">
-            <p className="font-medium text-foreground">
-              Enable the built-in AList first
-            </p>
-            <p>
-              Set{" "}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px] text-foreground">
-                ENABLE_ALIST=true
-              </code>{" "}
-              in your DriveHub container (and map port{" "}
-              <span className="tabular-nums">{alist?.port ?? 5244}</span>), then
-              restart.
-            </p>
-            <p>
-              See{" "}
-              <a
-                href="https://github.com/F-e-n-y-x/drivehub/blob/main/SETUP.md#terabox"
-                target="_blank"
-                rel="noreferrer noopener"
-                className="inline-flex items-center gap-1 font-medium text-accent hover:underline"
-              >
-                SETUP.md
-                <ExternalLink className="size-3" />
-              </a>{" "}
-              for details.
-            </p>
-            <p className="text-xs text-muted-foreground/80">
-              Advanced: a TeraBox-capable rclone build (RCLONE_BIN) plus a Custom
-              remote also works.
-            </p>
-          </div>
-        )}
-      </div>
-
-      <DialogFooter>
-        <Button variant="outline" onClick={onClose}>
-          Done
-        </Button>
-      </DialogFooter>
-    </>
   );
 }

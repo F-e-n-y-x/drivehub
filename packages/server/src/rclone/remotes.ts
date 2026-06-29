@@ -80,7 +80,7 @@ export const REMOTE_CATALOG: RemoteTypeInfo[] = [
     label: "TeraBox",
     oauth: false,
     description:
-      "Connect TeraBox with your account cookie (uses the bundled rclone-extra backend). Read and write supported.",
+      "Connect TeraBox with your account cookie (bundled rclone-extra backend). Browsing and uploads work; downloads/streaming are unreliable (unofficial backend).",
     fields: [
       {
         key: "cookie",
@@ -423,8 +423,16 @@ export class RemoteService {
     if (!row) throw new Error(`Unknown remote: ${remoteId}`);
     const clean = (subPath ?? "").replace(/^\/+/, "");
     if (row.type === "local") {
-      const base = this.localPath(row.configEnc);
-      return clean ? path.posix.join(base, clean) : base;
+      const base = path.posix.normalize(this.localPath(row.configEnc));
+      if (!clean) return base;
+      // Confine to the remote's base — `..` segments must not escape it, or a
+      // browse/delete/move op could read or destroy arbitrary container files.
+      const joined = path.posix.normalize(path.posix.join(base, clean));
+      const prefix = base.endsWith("/") ? base : base + "/";
+      if (joined !== base && !joined.startsWith(prefix)) {
+        throw new Error("Path escapes the remote's base directory");
+      }
+      return joined;
     }
     return `${row.name}:${clean}`;
   }

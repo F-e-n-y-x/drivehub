@@ -135,20 +135,21 @@ its config keys.
 
 TeraBox is **built in** — DriveHub's image bundles
 [rclone-extra](https://github.com/gulp79/rclone-extra) (a community rclone fork
-with a native `terabox` backend), so it works read **and** write, no AList
-needed.
+with a native `terabox` backend), so it works with no AList needed.
 
 1. Get your **cookie**: sign in at terabox.com, open DevTools (F12) → Network →
    click any request → copy the full **`Cookie`** request header (it must
    include `ndus=…`).
 2. In DriveHub: **Add remote → TeraBox** → paste the cookie → Add.
 
-That's it — TeraBox appears as a normal remote you can browse and use as a
-backup source or destination.
+That's it — TeraBox appears as a normal remote you can browse.
 
-Caveat: TeraBox has no official API, so this relies on the unofficial backend —
-the cookie expires periodically (just re-add it when it stops working), and it
-can break if TeraBox changes their site.
+Caveat: TeraBox has no official API, so this relies on an **unofficial** backend.
+Browsing and **uploads** work; **downloads/streaming are unreliable** (so
+previewing TeraBox videos may fail). The cookie also expires periodically (just
+re-add it). For reliable TeraBox **reading**, run your own
+[AList](https://alist.nn.ci)/OpenList server and connect it via
+**Add remote → AList / OpenList** (WebDAV URL).
 
 > Note: the bundled rclone is the **rclone-extra** community fork (a superset of
 > official rclone — all standard backends plus terabox/teldrive/alldebrid). To

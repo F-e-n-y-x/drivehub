@@ -33,17 +33,6 @@ const EnvSchema = z.object({
 
   CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
 
-  // Built-in AList: bundled binary run as a managed subprocess for backends
-  // rclone can't reach directly (TeraBox, Quark, Baidu, 115…). Off by default.
-  ENABLE_ALIST: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((v) => v === "true"),
-  ALIST_PORT: z.coerce.number().int().positive().default(5244),
-  ALIST_BIN: z.string().optional(),
-  /** Optional: set the built-in AList admin password (else one is generated). */
-  ALIST_ADMIN_PASSWORD: z.string().optional(),
-
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace"])
     .default("info"),

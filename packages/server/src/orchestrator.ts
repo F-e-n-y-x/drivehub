@@ -12,7 +12,6 @@ import { ContainerQuiescer } from "./docker/quiesce.js";
 import { JobRunner } from "./backup/runner.js";
 import { Scheduler } from "./backup/scheduler.js";
 import { UpdateService } from "./updates/service.js";
-import { AlistManager } from "./alist/manager.js";
 
 const APP_VERSION = process.env.APP_VERSION ?? "0.1.0";
 const GIT_SHA = process.env.GIT_SHA ?? null;
@@ -29,7 +28,6 @@ export class Orchestrator {
   readonly runner: JobRunner;
   readonly quiescer: ContainerQuiescer;
   readonly updates: UpdateService;
-  readonly alist: AlistManager;
   private readonly scheduler: Scheduler;
 
   private mode: "running" | "paused" = "running";
@@ -61,7 +59,6 @@ export class Orchestrator {
       () => this.quiescer.available(),
       logger,
     );
-    this.alist = new AlistManager(config, this.repo, this.remotes, logger);
   }
 
   async start(): Promise<void> {
@@ -75,10 +72,6 @@ export class Orchestrator {
     }
     // Re-materialize rclone.conf from the DB (the source of truth).
     await this.remotes.rebuildConfig();
-    // Start the built-in AList (no-op unless enabled), then it may have added a
-    // remote — rebuild config again so rclone knows about it.
-    await this.alist.start();
-    if (this.alist.enabled) await this.remotes.rebuildConfig();
     this.scheduler.start();
     this.broadcastStatus();
 
@@ -91,7 +84,6 @@ export class Orchestrator {
 
   async stop(): Promise<void> {
     this.scheduler.stop();
-    this.alist.stop();
   }
 
   pause(): void {

@@ -56,7 +56,7 @@ WORKDIR /app
 
 # gosu drops privileges after the entrypoint fixes mount permissions.
 # Storage engine = rclone-extra (a community rclone fork: all official backends
-# PLUS native terabox/teldrive/alldebrid/alist). unzip/ca-certificates fetch it.
+# PLUS native terabox/teldrive/alldebrid). unzip/ca-certificates fetch it.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends gosu ca-certificates unzip curl \
   && rm -rf /var/lib/apt/lists/* \
@@ -73,13 +73,7 @@ RUN apt-get update \
   && rm -rf /tmp/rclone-x \
   && chmod +x /usr/local/bin/rclone \
   && rm /tmp/rclone.zip \
-  && rclone version \
-  # Bundle the AList binary (optional built-in, enabled via ENABLE_ALIST).
-  && curl -fsSL "https://github.com/alist-org/alist/releases/latest/download/alist-linux-musl-${RCLONE_ARCH}.tar.gz" -o /tmp/alist.tar.gz \
-  && tar -xzf /tmp/alist.tar.gz -C /usr/local/bin alist \
-  && chmod +x /usr/local/bin/alist \
-  && rm /tmp/alist.tar.gz \
-  && /usr/local/bin/alist version || echo "alist bundle skipped"
+  && rclone version
 
 # Server runtime (code + pruned prod deps) and the built web assets.
 COPY --from=build /export/server/dist ./dist
@@ -95,8 +89,6 @@ RUN mkdir -p /data/sync /data/app \
 # NOTE: we intentionally stay root here; entrypoint.sh fixes mount ownership
 # and then drops to PUID:PGID via gosu.
 EXPOSE 8080
-# Built-in AList admin UI (only used when ENABLE_ALIST=true).
-EXPOSE 5244
 VOLUME ["/data/sync", "/data/app"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

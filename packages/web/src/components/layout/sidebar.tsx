@@ -3,13 +3,11 @@ import {
   PanelLeftClose,
   PanelLeft,
   Github,
-  Layers,
   Terminal,
   type LucideIcon,
 } from "lucide-react";
 import { navItems } from "./nav";
 import { UpdateWidget } from "./update-widget";
-import { useAlist } from "@/hooks/queries";
 import { useUIStore } from "@/store/ui";
 import { cn } from "@/lib/utils";
 import { SimpleTooltip } from "@/components/ui/tooltip";
@@ -87,11 +85,6 @@ export function Sidebar() {
   const collapsed = useUIStore((s) => s.sidebarCollapsed);
   const toggle = useUIStore((s) => s.toggleSidebar);
   const showLogs = useUIStore((s) => s.showLogs);
-  const { data: alist } = useAlist();
-  const alistReady = !!alist?.enabled && alist.running;
-  const alistUrl = alist
-    ? `http://${window.location.hostname}:${alist.port}`
-    : "";
 
   return (
     <aside
@@ -128,31 +121,6 @@ export function Sidebar() {
       </div>
 
       <div className="space-y-0.5 border-t border-border p-2.5">
-        {alistReady &&
-          (() => {
-            const link = (
-              <a
-                href={alistUrl}
-                target="_blank"
-                rel="noreferrer noopener"
-                className={cn(
-                  "flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground",
-                  collapsed && "justify-center px-0",
-                )}
-              >
-                <Layers className="size-[18px] shrink-0" />
-                {!collapsed && <span className="flex-1">AList</span>}
-              </a>
-            );
-            return collapsed ? (
-              <SimpleTooltip label="Open AList" side="right">
-                {link}
-              </SimpleTooltip>
-            ) : (
-              link
-            );
-          })()}
-
         {(() => {
           const repo = (
             <a

@@ -114,19 +114,6 @@ export function useSystem() {
   });
 }
 
-/**
- * Built-in AList status (enabled / running / port). Slow-moving, so cache for
- * ~30s. Drives the TeraBox guidance panel, the sidebar entry, and the Settings
- * card.
- */
-export function useAlist() {
-  return useQuery({
-    queryKey: qk.alist,
-    queryFn: api.getAlist,
-    staleTime: 30_000,
-  });
-}
-
 // --- Engine ---------------------------------------------------------------
 
 export function useEngineControl() {
@@ -241,17 +228,7 @@ export function useRemoteMutations() {
     },
   });
 
-  const addTeraBox = useMutation({
-    mutationFn: (body: { label: string; cookie: string }) => api.addTeraBox(body),
-    onSuccess: (r) => {
-      refresh();
-      toast.success("TeraBox connected", { description: r.label });
-    },
-    onError: (e: Error) =>
-      toast.error("Couldn't connect TeraBox", { description: e.message }),
-  });
-
-  return { create, createOAuth, remove, test, startIcloud, verifyIcloud, addTeraBox };
+  return { create, createOAuth, remove, test, startIcloud, verifyIcloud };
 }
 
 /**

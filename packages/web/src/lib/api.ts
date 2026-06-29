@@ -1,6 +1,5 @@
 import type {
   ActivityEvent,
-  AlistStatus,
   AppSettings,
   EngineStatus,
   FsListing,
@@ -153,9 +152,6 @@ export const api = {
       method: "POST",
       json: body,
     }),
-  // Native TeraBox: DriveHub configures the built-in AList for the user.
-  addTeraBox: (body: { label: string; cookie: string }) =>
-    request<RemotePublic>("/api/remotes/terabox", { method: "POST", json: body }),
   renameRemote: (id: string, label: string) =>
     request<RemotePublic>(`/api/remotes/${encodeURIComponent(id)}`, {
       method: "PATCH",
@@ -262,9 +258,6 @@ export const api = {
   // System info (About / diagnostics)
   getSystem: () => request<SystemInfo>("/api/system"),
 
-  // Built-in AList (managed file-gateway subprocess) status.
-  getAlist: () => request<AlistStatus>("/api/alist"),
-
   // Logs (in-app developer viewer)
   getLogs: (limit?: number) =>
     request<LogEntry[]>(
@@ -300,7 +293,6 @@ export const qk = {
   activity: (search: string) => ["activity", search] as const,
   updates: ["updates"] as const,
   system: ["system"] as const,
-  alist: ["alist"] as const,
   logs: ["logs"] as const,
   logLevel: ["log-level"] as const,
 };

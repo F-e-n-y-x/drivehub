@@ -134,11 +134,15 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
           <span className="font-medium text-muted-foreground">Throughput</span>
           <span className="flex items-center gap-1 tabular-nums text-foreground">
             <ArrowUp className="size-3.5 text-synced" />
-            {formatSpeed(speed.uploadBytesPerSec)}
+            {speed.uploadBytesPerSec === null
+              ? "—"
+              : formatSpeed(speed.uploadBytesPerSec)}
           </span>
           <span className="flex items-center gap-1 tabular-nums text-foreground">
             <ArrowDown className="size-3.5 text-accent" />
-            {formatSpeed(speed.downloadBytesPerSec)}
+            {speed.downloadBytesPerSec === null
+              ? "—"
+              : formatSpeed(speed.downloadBytesPerSec)}
           </span>
           {speed.at && (
             <span className="ml-auto text-muted-foreground/70">
@@ -149,7 +153,7 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
       )}
 
       {/* Actions */}
-      <div className="mt-auto flex items-center gap-2">
+      <div className="mt-auto flex items-center gap-1.5">
         <Button
           variant="accent"
           size="sm"
@@ -174,39 +178,43 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
             {speedTest.isPending ? "Testing…" : "Speed test"}
           </Button>
         </SimpleTooltip>
-        <SimpleTooltip label="Test connection">
-          <Button
-            variant="outline"
-            size="icon-sm"
-            aria-label="Test connection"
-            disabled={test.isPending}
-            onClick={() => test.mutate(remote.id)}
-          >
-            {test.isPending ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Plug className="size-3.5" />
-            )}
-          </Button>
-        </SimpleTooltip>
-        <SimpleTooltip label="Rename remote">
-          <Button
-            variant="outline"
-            size="icon-sm"
-            aria-label="Rename remote"
-            onClick={() => setRenameOpen(true)}
-          >
-            <Pencil className="size-3.5" />
-          </Button>
-        </SimpleTooltip>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Delete remote"
-          onClick={() => setConfirmOpen(true)}
-        >
-          <Trash2 className="size-4 text-muted-foreground" />
-        </Button>
+        <div className="ml-auto flex items-center gap-1.5">
+          <SimpleTooltip label="Test connection">
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label="Test connection"
+              disabled={test.isPending}
+              onClick={() => test.mutate(remote.id)}
+            >
+              {test.isPending ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Plug className="size-3.5" />
+              )}
+            </Button>
+          </SimpleTooltip>
+          <SimpleTooltip label="Rename remote">
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label="Rename remote"
+              onClick={() => setRenameOpen(true)}
+            >
+              <Pencil className="size-3.5" />
+            </Button>
+          </SimpleTooltip>
+          <SimpleTooltip label="Delete remote">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Delete remote"
+              onClick={() => setConfirmOpen(true)}
+            >
+              <Trash2 className="size-3.5 text-muted-foreground" />
+            </Button>
+          </SimpleTooltip>
+        </div>
       </div>
 
       <NamePromptDialog

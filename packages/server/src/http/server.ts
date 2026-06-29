@@ -76,7 +76,6 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
   app.get("/api/health", async () => ({ ok: true }));
   app.get("/api/status", async () => orch.getStatus());
   app.get("/api/system", async () => orch.systemInfo());
-  app.get("/api/alist", async () => orch.alist.status());
 
   app.post("/api/engine/pause", async () => {
     orch.pause();
@@ -193,8 +192,19 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     return orch.remotes.test(id);
   });
 
-  app.delete("/api/remotes/:id", async (req) => {
+  app.delete("/api/remotes/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
+    // Refuse while a running job still uses this remote — deleting tears down
+    // its rclone.conf section under the live transfer and fails confusingly.
+    const busy = orch.repo
+      .listJobs()
+      .some((j) => (j.sourceRemoteId === id || j.destRemoteId === id) && orch.runner.isRunning(j.id));
+    if (busy) {
+      return reply.code(409).send({
+        error: "remote_busy",
+        message: "A running job is using this remote. Wait for it to finish (or disable it) before deleting.",
+      });
+    }
     await orch.remotes.delete(id);
     orch.onRemotesChanged();
     return { ok: true };
@@ -203,7 +213,7 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
   app.get("/api/remotes/:id/about", async (req, reply) => {
     const { id } = req.params as { id: string };
     try {
-      return await orch.remotes.about(id);
+      return await cachedAbout(id, () => orch.remotes.about(id));
     } catch (e) {
       return reply.code(400).send({ error: "about_failed", message: String((e as Error).message ?? e) });
     }
@@ -237,24 +247,34 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
   const rcloneError = (r: { code: number; stderr: string }) =>
     r.stderr.split("\n").filter(Boolean).pop()?.slice(0, 300) ?? "operation failed";
 
+  // target() throws on an unknown remote or a path that escapes a local
+  // remote's base — turn that into a clean 400 instead of a generic 500.
+  const badTarget = (reply: import("fastify").FastifyReply, e: unknown) =>
+    reply.code(400).send({ error: "bad_target", message: String((e as Error).message ?? e) });
+
   app.post("/api/remotes/:id/ops/mkdir", async (req, reply) => {
     const { id } = req.params as { id: string };
     const { path: p } = (req.body ?? {}) as { path?: string };
-    const r = await orch.rclone.mkdir(orch.remotes.target(id, p ?? ""));
+    let target: string;
+    try { target = orch.remotes.target(id, p ?? ""); } catch (e) { return badTarget(reply, e); }
+    const r = await orch.rclone.mkdir(target);
     return r.code === 0 ? { ok: true } : reply.code(400).send({ error: "mkdir_failed", message: rcloneError(r) });
   });
 
   app.post("/api/remotes/:id/ops/touch", async (req, reply) => {
     const { id } = req.params as { id: string };
     const { path: p } = (req.body ?? {}) as { path?: string };
-    const r = await orch.rclone.touch(orch.remotes.target(id, p ?? ""));
+    let target: string;
+    try { target = orch.remotes.target(id, p ?? ""); } catch (e) { return badTarget(reply, e); }
+    const r = await orch.rclone.touch(target);
     return r.code === 0 ? { ok: true } : reply.code(400).send({ error: "touch_failed", message: rcloneError(r) });
   });
 
   app.post("/api/remotes/:id/ops/delete", async (req, reply) => {
     const { id } = req.params as { id: string };
     const { path: p, isDir } = (req.body ?? {}) as { path?: string; isDir?: boolean };
-    const target = orch.remotes.target(id, p ?? "");
+    let target: string;
+    try { target = orch.remotes.target(id, p ?? ""); } catch (e) { return badTarget(reply, e); }
     const r = isDir ? await orch.rclone.purge(target) : await orch.rclone.deleteFile(target);
     return r.code === 0 ? { ok: true } : reply.code(400).send({ error: "delete_failed", message: rcloneError(r) });
   });
@@ -264,7 +284,9 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     const { path: p, newName } = (req.body ?? {}) as { path?: string; newName?: string };
     if (!p || !newName) return reply.code(400).send({ error: "bad_request", message: "path and newName required" });
     const dst = path.posix.join(path.posix.dirname(p), newName);
-    const r = await orch.rclone.moveto(orch.remotes.target(id, p), orch.remotes.target(id, dst));
+    let srcT: string, dstT: string;
+    try { srcT = orch.remotes.target(id, p); dstT = orch.remotes.target(id, dst); } catch (e) { return badTarget(reply, e); }
+    const r = await orch.rclone.moveto(srcT, dstT);
     return r.code === 0 ? { ok: true } : reply.code(400).send({ error: "rename_failed", message: rcloneError(r) });
   });
 
@@ -277,8 +299,11 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     if (!b.srcRemoteId || !b.dstRemoteId || b.dstPath == null) {
       return reply.code(400).send({ error: "bad_request", message: "missing fields" });
     }
-    const src = orch.remotes.target(b.srcRemoteId, b.srcPath ?? "");
-    const dst = orch.remotes.target(b.dstRemoteId, b.dstPath);
+    let src: string, dst: string;
+    try {
+      src = orch.remotes.target(b.srcRemoteId, b.srcPath ?? "");
+      dst = orch.remotes.target(b.dstRemoteId, b.dstPath);
+    } catch (e) { return badTarget(reply, e); }
     const r = b.op === "move" ? await orch.rclone.moveto(src, dst) : await orch.rclone.copyto(src, dst);
     return r.code === 0 ? { ok: true } : reply.code(400).send({ error: "transfer_failed", message: rcloneError(r) });
   });
@@ -297,13 +322,7 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     const rangeHeader = req.headers.range;
 
     reply.hijack();
-    const headers: Record<string, string> = {
-      "Content-Type": mimeFromName(filename),
-      "Accept-Ranges": "bytes",
-    };
-    if (q.download != null) {
-      headers["Content-Disposition"] = `attachment; filename="${filename.replace(/"/g, "")}"`;
-    }
+    const headers = fileResponseHeaders(filename, q.download != null);
 
     const pipe = (child: ReturnType<typeof orch.rclone.catProcess>) => {
       child.stdout.pipe(reply.raw);
@@ -369,11 +388,7 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     }
     const filename = path.basename(abs);
     reply.hijack();
-    const headers: Record<string, string> = {
-      "Content-Type": mimeFromName(filename),
-      "Accept-Ranges": "bytes",
-    };
-    if (q.download != null) headers["Content-Disposition"] = `attachment; filename="${filename.replace(/"/g, "")}"`;
+    const headers = fileResponseHeaders(filename, q.download != null);
     const m = req.headers.range ? /bytes=(\d*)-(\d*)/.exec(req.headers.range) : null;
     if (m) {
       let start = m[1] ? parseInt(m[1], 10) : 0;
@@ -605,6 +620,17 @@ async function cachedSize(key: string, fetcher: () => Promise<number | null>): P
   return size;
 }
 
+// Cache storage usage for 60s so the Remotes page doesn't spawn one (or two)
+// rclone processes per card on every mount.
+const aboutCache = new Map<string, { value: unknown; at: number }>();
+async function cachedAbout<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  const hit = aboutCache.get(key);
+  if (hit && Date.now() - hit.at < 60_000) return hit.value as T;
+  const value = await fetcher();
+  aboutCache.set(key, { value, at: Date.now() });
+  return value;
+}
+
 const MIME: Record<string, string> = {
   jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif",
   webp: "image/webp", svg: "image/svg+xml", bmp: "image/bmp", ico: "image/x-icon",
@@ -622,22 +648,48 @@ function mimeFromName(name: string): string {
   return MIME[ext] ?? "application/octet-stream";
 }
 
+// Only these media render safely inline. Anything else (html, svg, xml, js…)
+// could execute script in our origin if opened as a top-level document, so we
+// force it to download and never let the browser MIME-sniff it.
+function fileResponseHeaders(filename: string, download: boolean): Record<string, string> {
+  const mime = mimeFromName(filename);
+  const inlineOk = /^(image\/(?!svg)|video\/|audio\/|application\/pdf$|text\/plain$)/.test(mime);
+  const safeName = filename.replace(/[\r\n"]/g, "");
+  return {
+    "Content-Type": mime,
+    "Accept-Ranges": "bytes",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Disposition": `${download || !inlineOk ? "attachment" : "inline"}; filename="${safeName}"`,
+  };
+}
+
 async function browseLocalFs(input?: string): Promise<import("@drivehub/types").FsListing> {
   const target = input && input.length ? path.resolve(input) : "/";
   const dirents = await readdir(target, { withFileTypes: true });
-  const entries = dirents
-    .filter((d) => !d.name.startsWith(".") || d.isDirectory())
-    .map((d) => ({
-      name: d.name,
-      path: path.join(target, d.name),
-      isDir: d.isDirectory(),
-      sizeBytes: null as number | null,
-    }))
+  const entries = await Promise.all(
+    dirents
+      .filter((d) => !d.name.startsWith(".") || d.isDirectory())
+      .map(async (d) => {
+        const full = path.join(target, d.name);
+        let sizeBytes: number | null = null;
+        if (!d.isDirectory()) {
+          // Real sizes drive the UI and the text-preview cap (a null size would
+          // let a multi-GB file slip past the limit and OOM the browser tab).
+          try {
+            sizeBytes = (await stat(full)).size;
+          } catch {
+            /* unreadable entry — leave size unknown */
+          }
+        }
+        return { name: d.name, path: full, isDir: d.isDirectory(), sizeBytes };
+      }),
+  );
+  entries
     .sort((a, b) => {
       if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
       return a.name.localeCompare(b.name);
     })
-    .slice(0, 2000);
+    .splice(2000);
   const parent = target === path.parse(target).root ? null : path.dirname(target);
   return { path: target, parent, entries };
 }

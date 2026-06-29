@@ -114,13 +114,6 @@ export class RcloneService {
     return (await this.version()) !== null;
   }
 
-  /** Update the rclone binary in place. Requires write access to the binary. */
-  async selfUpdate(): Promise<{ ok: boolean; message: string }> {
-    const { code, stdout, stderr } = await this.run(["selfupdate"]);
-    const message = (stdout + stderr).trim().split("\n").filter(Boolean).pop() ?? "";
-    return { ok: code === 0, message: message || (code === 0 ? "rclone updated" : "selfupdate failed") };
-  }
-
   /** Obscure a password into rclone's reversible-obscured form. */
   async obscure(plain: string): Promise<string> {
     const child = spawn(this.bin, ["obscure", plain], { windowsHide: true });
@@ -209,10 +202,6 @@ export class RcloneService {
     } catch {
       return [];
     }
-  }
-
-  async about(remoteName: string): Promise<AboutResult> {
-    return this.aboutTarget(`${remoteName}:`);
   }
 
   /** About on an explicit target ("name:" for remotes, or a local path). */
