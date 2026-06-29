@@ -1,14 +1,15 @@
-# DriveHub — Portainer stack (v2, multi-backend backup/sync powered by rclone).
+# DriveHub — Portainer stack (multi-backend backup/sync powered by rclone).
 # Paste into Portainer: Stacks -> Add stack -> Web editor, edit the REPLACE_...
 # values, then Deploy.
 #
 # Notes:
 #  * The image must be PUBLIC on GHCR, or add a Registry (GitHub user + PAT) in
 #    Portainer so it can pull a private image.
-#  * Only TOKEN_ENCRYPTION_KEY and PUBLIC_URL are required. Storage backends
-#    (Local/NAS/USB, S3, B2, Dropbox, OneDrive, WebDAV, SFTP) are added in the
-#    web UI. GOOGLE_* is only needed for one-click Google Drive sign-in.
+#  * Only TOKEN_ENCRYPTION_KEY and PUBLIC_URL are required. Storage backends are
+#    added in the web UI. GOOGLE_* is only for one-click Google Drive sign-in.
 #  * Set PUID/PGID to 0 to back up root-owned data (e.g. system AppData).
+#  * Set ENABLE_ALIST=true for TeraBox/Quark/Baidu/115… via the built-in AList
+#    (opens at port 5244; DriveHub auto-creates an "AList (built-in)" remote).
 
 services:
   drivehub:
@@ -17,27 +18,32 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+      - "5244:5244" # built-in AList admin UI (only needed if ENABLE_ALIST=true)
     environment:
       # --- REQUIRED: encrypts stored credentials. openssl rand -base64 32
       TOKEN_ENCRYPTION_KEY: "REPLACE_WITH_RANDOM_32B_SECRET"
       # --- REQUIRED: the URL you open DriveHub at.
       PUBLIC_URL: "http://localhost:8080"
-      # --- OPTIONAL: only for one-click Google Drive (see SETUP.md). Redirect
-      #     URI in Google = <PUBLIC_URL>/api/oauth/google/callback
-      GOOGLE_CLIENT_ID: ""
-      GOOGLE_CLIENT_SECRET: ""
       # --- Permissions: 0 = run as root (read root-owned data, write DB) ---
       PUID: "0"
       PGID: "0"
+      # --- Built-in AList (for TeraBox etc.). Set true to enable. ---
+      ENABLE_ALIST: "false"
+      # Optional: choose the AList admin password (else generated and shown in
+      # DriveHub -> Settings / the TeraBox panel).
+      ALIST_ADMIN_PASSWORD: ""
+      # --- OPTIONAL: one-click Google Drive (see SETUP.md). Redirect URI in
+      #     Google = <PUBLIC_URL>/api/oauth/google/callback ---
+      GOOGLE_CLIENT_ID: ""
+      GOOGLE_CLIENT_SECRET: ""
       # --- Optional tuning ---
       CONCURRENCY: "4"
       LOG_LEVEL: "info"
     volumes:
-      # A local folder exposed as the default "Local" remote. Mount more for
-      # more sources, e.g. /DATA/Photos:/data/sync/Photos
+      # A local folder exposed as a "Local" remote (mount more for more sources).
       - /DATA/AppData:/data/sync
-      # App data: SQLite DB, encrypted credentials, rclone.conf. KEEP OUTSIDE
-      # the sync folder above.
+      # App data: SQLite DB, encrypted credentials, rclone.conf, AList data.
+      # KEEP OUTSIDE the sync folder above.
       - /DATA/drivehub-app:/data/app
       # OPTIONAL: enable "quiesce containers during snapshot" for consistent
       # database backups (pauses chosen containers during the archive).
