@@ -191,6 +191,22 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     return repo.listRuns(id, 50).map(toJobRun);
   });
 
+  // ----- updates ---------------------------------------------------------
+  app.get("/api/updates", async () => orch.updates.check());
+  app.post("/api/updates/check", async () => {
+    const status = await orch.updates.check(true);
+    orch.bus.emit({ type: "updates", payload: status });
+    return status;
+  });
+  app.post("/api/updates/rclone", async (_req, reply) => {
+    const result = await orch.updates.updateRclone();
+    const status = await orch.updates.check(true);
+    orch.bus.emit({ type: "updates", payload: status });
+    orch.broadcastStatus();
+    if (!result.ok) return reply.code(500).send({ error: "update_failed", message: result.message });
+    return { ok: true, message: result.message, updates: status };
+  });
+
   // ----- runs & activity -------------------------------------------------
   app.get("/api/runs", async () => repo.recentRuns(50).map(toJobRun));
   app.get("/api/activity", async (req) => {

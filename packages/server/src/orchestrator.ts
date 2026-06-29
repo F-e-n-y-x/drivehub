@@ -10,6 +10,9 @@ import { RemoteService } from "./rclone/remotes.js";
 import { ContainerQuiescer } from "./docker/quiesce.js";
 import { JobRunner } from "./backup/runner.js";
 import { Scheduler } from "./backup/scheduler.js";
+import { UpdateService } from "./updates/service.js";
+
+const APP_VERSION = process.env.APP_VERSION ?? "0.1.0";
 
 /**
  * Top-level wiring. Owns the rclone service, the remote/job services, the
@@ -22,6 +25,7 @@ export class Orchestrator {
   readonly remotes: RemoteService;
   readonly runner: JobRunner;
   readonly quiescer: ContainerQuiescer;
+  readonly updates: UpdateService;
   private readonly scheduler: Scheduler;
 
   private mode: "running" | "paused" = "running";
@@ -46,6 +50,12 @@ export class Orchestrator {
       logger,
     });
     this.scheduler = new Scheduler(this.repo, this.runner, this.remotes, logger);
+    this.updates = new UpdateService(
+      this.rclone,
+      APP_VERSION,
+      () => this.quiescer.available(),
+      logger,
+    );
   }
 
   async start(): Promise<void> {
@@ -61,6 +71,12 @@ export class Orchestrator {
     await this.remotes.rebuildConfig();
     this.scheduler.start();
     this.broadcastStatus();
+
+    // Background update check (don't block startup).
+    void this.updates
+      .check()
+      .then((u) => this.bus.emit({ type: "updates", payload: u }))
+      .catch(() => {});
   }
 
   async stop(): Promise<void> {

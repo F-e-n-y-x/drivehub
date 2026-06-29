@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, ExternalLink, Loader2 } from "lucide-react";
 import type { RemoteTypeInfo } from "@drivehub/types";
 import {
   Dialog,
@@ -35,6 +35,9 @@ export function AddRemoteDialog({
   const [label, setLabel] = useState("");
   const [params, setParams] = useState<Record<string, string>>({});
   const [token, setToken] = useState("");
+  // For Google Drive: reveal the "paste an rclone token" path alongside the
+  // redirect button (needed when accessing DriveHub via an IP address).
+  const [driveTokenMode, setDriveTokenMode] = useState(false);
 
   const reset = () => {
     setStep("pick");
@@ -42,6 +45,7 @@ export function AddRemoteDialog({
     setLabel("");
     setParams({});
     setToken("");
+    setDriveTokenMode(false);
   };
 
   const close = (next: boolean) => {
@@ -54,6 +58,7 @@ export function AddRemoteDialog({
     setLabel(info.label);
     setParams({});
     setToken("");
+    setDriveTokenMode(false);
     setStep("form");
   };
 
@@ -64,13 +69,17 @@ export function AddRemoteDialog({
     );
   }, [selected, params]);
 
-  const isTokenPaste =
-    selected?.oauth && (selected.type === "dropbox" || selected.type === "onedrive");
   const isGoogle = selected?.type === "drive";
+  const isOtherOAuth =
+    selected?.oauth && (selected.type === "dropbox" || selected.type === "onedrive");
+  // Drive uses redirect by default, but can paste a token in "advanced" mode.
+  const isGoogleRedirect = isGoogle && !driveTokenMode;
+  // Any path that submits an rclone token JSON.
+  const isTokenPaste = isOtherOAuth || (isGoogle && driveTokenMode);
 
   const submit = () => {
     if (!selected) return;
-    if (isGoogle) {
+    if (isGoogleRedirect) {
       // Navigate to the server OAuth start; it 302s to Google and back.
       window.location.href = `/api/oauth/google/start?label=${encodeURIComponent(
         label || selected.label,
@@ -80,7 +89,7 @@ export function AddRemoteDialog({
     if (isTokenPaste) {
       createOAuth.mutate(
         {
-          type: selected.type as "dropbox" | "onedrive",
+          type: selected.type as "drive" | "dropbox" | "onedrive",
           label: label || selected.label,
           token: token.trim(),
         },
@@ -168,11 +177,47 @@ export function AddRemoteDialog({
                 </Field>
 
                 {isGoogle ? (
-                  <p className="rounded-lg bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground leading-relaxed">
-                    You'll be redirected to Google to authorize access, then
-                    returned here. The server must have GOOGLE_CLIENT_ID and
-                    GOOGLE_CLIENT_SECRET configured (see SETUP.md).
-                  </p>
+                  <div className="space-y-3.5">
+                    <p className="rounded-lg bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground leading-relaxed">
+                      You'll be redirected to Google to authorize access, then
+                      returned here. The server must have GOOGLE_CLIENT_ID and
+                      GOOGLE_CLIENT_SECRET configured (see SETUP.md).
+                    </p>
+
+                    <div className="rounded-lg border border-border">
+                      <button
+                        type="button"
+                        onClick={() => setDriveTokenMode((v) => !v)}
+                        className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-[13px] font-medium text-foreground"
+                        aria-expanded={driveTokenMode}
+                      >
+                        Advanced: paste an rclone token
+                        <ChevronDown
+                          className={`size-4 text-muted-foreground transition-transform ${
+                            driveTokenMode ? "rotate-180" : ""
+                          }`}
+                        />
+                      </button>
+                      {driveTokenMode && (
+                        <div className="border-t border-border p-3">
+                          <Field
+                            label="rclone token"
+                            htmlFor="remote-token"
+                            required
+                            hint='On any computer with a browser, install rclone and run rclone authorize "drive", complete the Google sign-in, then paste the resulting token JSON here. Use this when you access DriveHub via an IP address (Google blocks IP redirect URLs).'
+                          >
+                            <Textarea
+                              id="remote-token"
+                              value={token}
+                              onChange={(e) => setToken(e.target.value)}
+                              placeholder='{"access_token":"...","token_type":"bearer",...}'
+                              className="min-h-[96px]"
+                            />
+                          </Field>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 ) : isTokenPaste ? (
                   <Field
                     label="rclone token"
@@ -209,9 +254,9 @@ export function AddRemoteDialog({
                   onClick={submit}
                 >
                   {busy && <Loader2 className="size-4 animate-spin" />}
-                  {isGoogle ? (
+                  {isGoogleRedirect ? (
                     <>
-                      Connect Google Account
+                      Connect with Google
                       <ExternalLink className="size-3.5" />
                     </>
                   ) : (

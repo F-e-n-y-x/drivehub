@@ -10,6 +10,7 @@ import type {
   RemotePublic,
   RemoteType,
   RemoteTypeInfo,
+  UpdateStatus,
 } from "@drivehub/types";
 
 export class ApiError extends Error {
@@ -132,6 +133,16 @@ export const api = {
     if (opts?.search) params.set("search", opts.search);
     return request<ActivityEvent[]>(`/api/activity?${params.toString()}`);
   },
+
+  // Updates
+  getUpdates: () => request<UpdateStatus>("/api/updates"),
+  checkUpdates: () =>
+    request<UpdateStatus>("/api/updates/check", { method: "POST" }),
+  updateRclone: () =>
+    request<{ ok: boolean; message: string; updates: UpdateStatus }>(
+      "/api/updates/rclone",
+      { method: "POST" },
+    ),
 };
 
 /** Centralized query keys so SSE handlers and components stay in sync. */
@@ -146,4 +157,5 @@ export const qk = {
   browse: (remoteId: string, path: string) =>
     ["browse", remoteId, path] as const,
   activity: (search: string) => ["activity", search] as const,
+  updates: ["updates"] as const,
 };

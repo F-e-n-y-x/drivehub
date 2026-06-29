@@ -65,6 +65,16 @@ export function useActivity(search: string) {
   });
 }
 
+export function useUpdates() {
+  return useQuery({
+    queryKey: qk.updates,
+    queryFn: api.getUpdates,
+    // Update checks are slow-moving; SSE pushes fresher data when it changes.
+    staleTime: 60 * 60_000,
+    refetchOnMount: true,
+  });
+}
+
 // --- Engine ---------------------------------------------------------------
 
 export function useEngineControl() {
@@ -215,4 +225,40 @@ export function useJobMutations() {
   });
 
   return { create, update, remove, run };
+}
+
+// --- Updates --------------------------------------------------------------
+
+export function useUpdateActions() {
+  const qc = useQueryClient();
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: qk.updates });
+    qc.invalidateQueries({ queryKey: qk.status });
+  };
+
+  const checkNow = useMutation({
+    mutationFn: api.checkUpdates,
+    onSuccess: (status) => {
+      qc.setQueryData(qk.updates, status);
+      qc.invalidateQueries({ queryKey: qk.status });
+      toast.success(
+        status.anyAvailable ? "Updates available" : "Everything is up to date",
+      );
+    },
+    onError: (e: Error) =>
+      toast.error("Couldn't check for updates", { description: e.message }),
+  });
+
+  const updateRclone = useMutation({
+    mutationFn: api.updateRclone,
+    onSuccess: (res) => {
+      qc.setQueryData(qk.updates, res.updates);
+      refresh();
+      toast.success("rclone updated", { description: res.message });
+    },
+    onError: (e: Error) =>
+      toast.error("Couldn't update rclone", { description: e.message }),
+  });
+
+  return { checkNow, updateRclone };
 }

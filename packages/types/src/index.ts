@@ -235,7 +235,32 @@ export type ServerEvent =
   | { type: "remote"; payload: RemotePublic }
   | { type: "job"; payload: JobPublic }
   | { type: "progress"; payload: JobProgress }
-  | { type: "run"; payload: JobRun };
+  | { type: "run"; payload: JobRun }
+  | { type: "updates"; payload: UpdateStatus };
+
+// ---------------------------------------------------------------------------
+// Updates (rclone self-update + app/container update awareness)
+// ---------------------------------------------------------------------------
+
+export interface ComponentUpdate {
+  /** "rclone" | "drivehub" */
+  name: string;
+  current: string | null;
+  latest: string | null;
+  updateAvailable: boolean;
+  /** rclone can update itself in place; the app updates by redeploying. */
+  canSelfUpdate: boolean;
+}
+
+export interface UpdateStatus {
+  rclone: ComponentUpdate;
+  app: ComponentUpdate;
+  /** Whether the Docker socket is available (affects how the app updates). */
+  dockerAvailable: boolean;
+  checkedAt: number;
+  /** True if any component has an update available. */
+  anyAvailable: boolean;
+}
 
 // ---------------------------------------------------------------------------
 // REST helpers

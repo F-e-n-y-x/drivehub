@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Loader2, Save } from "lucide-react";
 import type { AppSettings } from "@drivehub/types";
 import { useSettings, useSaveSettings } from "@/hooks/queries";
+import { UpdatesSection } from "@/components/settings/updates-section";
 import { useUIStore, type ThemePreference } from "@/store/ui";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -51,12 +53,21 @@ export function SettingsPage() {
   const { data: settings, isLoading, isError, refetch } = useSettings();
   const save = useSaveSettings();
   const setTheme = useUIStore((s) => s.setTheme);
+  const { hash } = useLocation();
 
   const [form, setForm] = useState<AppSettings | null>(null);
 
   useEffect(() => {
     if (settings) setForm(settings);
   }, [settings]);
+
+  // Deep-link to a section, e.g. /settings#updates from the sidebar widget.
+  useEffect(() => {
+    if (!hash || isLoading) return;
+    const id = hash.replace(/^#/, "");
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [hash, isLoading]);
 
   if (isLoading || !form) {
     return (
@@ -200,6 +211,8 @@ export function SettingsPage() {
           </Row>
         </CardContent>
       </Card>
+
+      <UpdatesSection />
     </form>
   );
 }

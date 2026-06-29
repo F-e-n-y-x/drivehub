@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { PanelLeftClose, PanelLeft } from "lucide-react";
 import { navItems } from "./nav";
+import { UpdateWidget } from "./update-widget";
 import { useUIStore } from "@/store/ui";
 import { cn } from "@/lib/utils";
 import { SimpleTooltip } from "@/components/ui/tooltip";
@@ -76,6 +77,10 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      <div className="px-2.5 pb-1">
+        <UpdateWidget collapsed={collapsed} />
+      </div>
 
       <div className="border-t border-border p-2.5">
         <button

@@ -44,3 +44,24 @@ export function formatSpeed(bytesPerSec: number | null | undefined): string {
   if (!bytesPerSec) return "0 B/s";
   return `${formatBytes(bytesPerSec)}/s`;
 }
+
+/** Relative time from an epoch-ms timestamp, e.g. "2 minutes ago". */
+export function formatRelativeTime(ms: number | null | undefined): string {
+  if (!ms) return "never";
+  const diff = ms - Date.now();
+  const abs = Math.abs(diff);
+  const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
+    ["year", 365 * 24 * 3600_000],
+    ["month", 30 * 24 * 3600_000],
+    ["day", 24 * 3600_000],
+    ["hour", 3600_000],
+    ["minute", 60_000],
+    ["second", 1000],
+  ];
+  if (abs < 30_000) return "just now";
+  for (const [unit, unitMs] of units) {
+    if (abs >= unitMs) return rtf.format(Math.round(diff / unitMs), unit);
+  }
+  return "just now";
+}

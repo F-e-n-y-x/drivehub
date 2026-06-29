@@ -5,6 +5,7 @@ import type {
   EngineStatus,
   JobPublic,
   ServerEvent,
+  UpdateStatus,
 } from "@drivehub/types";
 import { qk } from "@/lib/api";
 import { useProgressStore } from "@/store/progress";
@@ -80,6 +81,10 @@ export function useServerEvents(): ConnectionState {
         }
         case "progress": {
           useProgressStore.getState().set(event.payload);
+          break;
+        }
+        case "updates": {
+          queryClient.setQueryData<UpdateStatus>(qk.updates, event.payload);
           break;
         }
       }

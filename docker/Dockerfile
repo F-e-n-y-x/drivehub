@@ -45,6 +45,9 @@ ENV WEB_DIST=/app/web
 # root (needed to read root-owned source data such as system AppData).
 ENV PUID=10001
 ENV PGID=10001
+# Stamped at build time so the app can report its version / check for updates.
+ARG APP_VERSION=0.1.0
+ENV APP_VERSION=$APP_VERSION
 WORKDIR /app
 
 # gosu drops privileges after the entrypoint fixes mount permissions.
