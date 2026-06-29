@@ -280,20 +280,6 @@ export function SettingsPage() {
           )}
         </CardContent>
       </Card>
-
-      {/* Always-reachable save bar that sticks to the bottom while scrolling. */}
-      <div className="sticky bottom-0 z-10 -mx-5 mt-1 border-t border-border bg-background/80 px-5 py-3 backdrop-blur sm:-mx-8 sm:px-8">
-        <div className="flex items-center justify-end">
-          <Button type="submit" variant="accent" disabled={save.isPending}>
-            {save.isPending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Save className="size-4" />
-            )}
-            Save changes
-          </Button>
-        </div>
-      </div>
     </form>
   );
 }

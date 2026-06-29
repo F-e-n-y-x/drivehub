@@ -80,8 +80,16 @@ export const REMOTE_CATALOG: RemoteTypeInfo[] = [
     label: "TeraBox",
     oauth: false,
     description:
-      "TeraBox has no official API. Connect it through the built-in AList: enable AList, open it to add a TeraBox storage, and it appears under your AList remote. (Advanced: a TeraBox-capable rclone build via RCLONE_BIN + a Custom remote.)",
-    fields: [],
+      "Connect TeraBox with your account cookie (uses the bundled rclone-extra backend). Read and write supported.",
+    fields: [
+      {
+        key: "cookie",
+        label: "Cookie",
+        type: "password",
+        required: true,
+        help: "Sign in at terabox.com, open DevTools (F12) → Network → click any request → copy the full Cookie header (must include ndus=…).",
+      },
+    ],
   },
   {
     type: "smb",
@@ -155,7 +163,7 @@ export const REMOTE_CATALOG: RemoteTypeInfo[] = [
 const RCLONE_BACKEND: Partial<Record<RemoteType, string>> = {
   icloud: "iclouddrive",
   alist: "webdav", // AList/OpenList is reached via its WebDAV endpoint
-  terabox: "webdav", // TeraBox is served through the built-in AList over WebDAV
+  terabox: "terabox", // native backend (bundled rclone-extra fork)
 };
 function rcloneBackend(type: RemoteType): string {
   return RCLONE_BACKEND[type] ?? type;
@@ -167,6 +175,7 @@ const SECRET_KEYS = new Set([
   "pass",
   "token",
   "client_secret",
+  "cookie",
 ]);
 
 /** Looks secret by name (covers arbitrary keys from custom backends). */
@@ -253,10 +262,8 @@ export class RemoteService {
     const name = sanitizeName(input.label, existing);
     const params = pruneEmpty(input.params);
 
-    // AList/TeraBox-via-AList speak generic WebDAV; rclone needs the vendor hint.
-    if ((input.type === "alist" || input.type === "terabox") && !params.vendor) {
-      params.vendor = "other";
-    }
+    // AList speaks generic WebDAV; rclone needs the vendor hint.
+    if (input.type === "alist" && !params.vendor) params.vendor = "other";
 
     let summary: Record<string, string>;
     if (input.type === "custom") {

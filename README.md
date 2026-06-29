@@ -83,11 +83,11 @@ Beyond the built-in providers, the **Custom / other (advanced)** remote can
 configure *any* rclone backend (pCloud, Mega, Koofr, Storj, Box, Yandex…) —
 enter the rclone backend name plus its config keys.
 
-**TeraBox** has no official API and no native rclone backend, so it only works
-with a TeraBox-capable rclone build (e.g. an unofficial fork). To use it: mount
-such a binary into the container and point `RCLONE_BIN` at it, then add a
-**Custom** remote with backend `terabox`. DriveHub ships official rclone by
-default and does not bundle forks.
+**TeraBox** is built in: the image bundles the
+[rclone-extra](https://github.com/gulp79/rclone-extra) fork (a superset of
+official rclone with a native `terabox` backend), so **Add remote → TeraBox**
+and paste your cookie — read and write both work. To use stock rclone instead,
+mount your own binary and set `RCLONE_BIN`.
 
 ## Features
 

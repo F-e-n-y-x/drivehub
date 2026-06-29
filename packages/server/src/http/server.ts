@@ -188,24 +188,6 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     return updated;
   });
 
-  // Native TeraBox: DriveHub drives the built-in AList API for the user.
-  app.post("/api/remotes/terabox", async (req, reply) => {
-    const b = (req.body ?? {}) as { label?: string; cookie?: string };
-    if (!b.cookie) return reply.code(400).send({ error: "bad_request", message: "cookie is required" });
-    try {
-      const remote = await orch.alist.addStorage({
-        label: b.label || "TeraBox",
-        driver: "Terabox",
-        addition: { cookie: b.cookie, root_folder_path: "/" },
-      });
-      orch.onRemotesChanged();
-      orch.bus.emit({ type: "remote", payload: remote });
-      return remote;
-    } catch (e) {
-      return reply.code(400).send({ error: "terabox_failed", message: String((e as Error).message ?? e) });
-    }
-  });
-
   app.post("/api/remotes/:id/test", async (req) => {
     const { id } = req.params as { id: string };
     return orch.remotes.test(id);

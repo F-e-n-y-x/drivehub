@@ -55,7 +55,8 @@ ENV GIT_SHA=$GIT_SHA
 WORKDIR /app
 
 # gosu drops privileges after the entrypoint fixes mount permissions.
-# rclone is the storage engine; unzip/ca-certificates are needed to fetch it.
+# Storage engine = rclone-extra (a community rclone fork: all official backends
+# PLUS native terabox/teldrive/alldebrid/alist). unzip/ca-certificates fetch it.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends gosu ca-certificates unzip curl \
   && rm -rf /var/lib/apt/lists/* \
@@ -66,8 +67,10 @@ RUN apt-get update \
        arm64) RCLONE_ARCH=arm64 ;; \
        *) RCLONE_ARCH="$ARCH" ;; \
      esac \
-  && curl -fsSL "https://downloads.rclone.org/rclone-current-linux-${RCLONE_ARCH}.zip" -o /tmp/rclone.zip \
-  && unzip -j /tmp/rclone.zip "*/rclone" -d /usr/local/bin \
+  && curl -fsSL "https://github.com/gulp79/rclone-extra/releases/latest/download/rclone-linux-${RCLONE_ARCH}.zip" -o /tmp/rclone.zip \
+  && unzip -o /tmp/rclone.zip -d /tmp/rclone-x \
+  && cp "$(find /tmp/rclone-x -type f -name rclone | head -n1)" /usr/local/bin/rclone \
+  && rm -rf /tmp/rclone-x \
   && chmod +x /usr/local/bin/rclone \
   && rm /tmp/rclone.zip \
   && rclone version \

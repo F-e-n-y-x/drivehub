@@ -412,11 +412,6 @@ export function AddRemoteDialog({
             onBack={() => setStep("pick")}
             onClose={() => close(false)}
           />
-        ) : selected?.type === "terabox" ? (
-          <TeraBoxPanel
-            onBack={() => setStep("pick")}
-            onClose={() => close(false)}
-          />
         ) : (
           selected && (
             <>
