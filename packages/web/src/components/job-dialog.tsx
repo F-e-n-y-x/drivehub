@@ -141,7 +141,7 @@ export function JobDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{job ? "Edit job" : "Create job"}</DialogTitle>
           <DialogDescription>

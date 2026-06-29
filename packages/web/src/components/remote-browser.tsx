@@ -231,7 +231,7 @@ export function RemoteBrowser({
         open={!!deleteTarget}
         onOpenChange={(o) => !o && setDeleteTarget(null)}
       >
-        <DialogContent className="max-w-sm">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>
               {deleteTarget ? `Delete "${deleteTarget.name}"?` : "Delete folder?"}

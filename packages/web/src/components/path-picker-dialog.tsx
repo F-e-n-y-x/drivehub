@@ -32,7 +32,7 @@ export function PathPickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Choose a folder</DialogTitle>
           <DialogDescription>

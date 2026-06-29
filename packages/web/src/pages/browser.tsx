@@ -15,6 +15,7 @@ import {
   LayoutGrid,
   List as ListIcon,
   Loader2,
+  MoreHorizontal,
   Pencil,
   Plus,
   RotateCw,
@@ -851,11 +852,14 @@ function FileManager({
                 }}
               />
 
-              <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
+              <span className="mx-0.5 hidden h-5 w-px bg-border sm:block" aria-hidden />
 
+              {/* Secondary actions — hidden on phones, collapsed into the
+                  "More" (…) menu below; shown inline from sm up. */}
               <Button
                 variant="ghost"
                 size="sm"
+                className="hidden sm:inline-flex"
                 disabled={!single}
                 onClick={() => single && setRenameTarget(single)}
               >
@@ -865,6 +869,7 @@ function FileManager({
               <Button
                 variant="ghost"
                 size="sm"
+                className="hidden sm:inline-flex"
                 disabled={selectedEntries.length === 0}
                 onClick={() => copyToClipboard(selectedEntries, "copy")}
               >
@@ -874,6 +879,7 @@ function FileManager({
               <Button
                 variant="ghost"
                 size="sm"
+                className="hidden sm:inline-flex"
                 disabled={selectedEntries.length === 0}
                 onClick={() => copyToClipboard(selectedEntries, "cut")}
               >
@@ -883,6 +889,7 @@ function FileManager({
               <Button
                 variant="ghost"
                 size="sm"
+                className="hidden sm:inline-flex"
                 disabled={clipboardCount === 0 || ops.paste.isPending}
                 onClick={paste}
               >
@@ -898,6 +905,7 @@ function FileManager({
           <Button
             variant="ghost"
             size="sm"
+            className="hidden sm:inline-flex"
             disabled={selectedFiles.length === 0}
             onClick={() => downloadEntries(selectedFiles)}
           >
@@ -908,7 +916,7 @@ function FileManager({
             <Button
               variant="ghost"
               size="sm"
-              className="text-danger hover:bg-danger/10 hover:text-danger"
+              className="hidden text-danger hover:bg-danger/10 hover:text-danger sm:inline-flex"
               disabled={selectedEntries.length === 0}
               onClick={() => setDeleteTargets(selectedEntries)}
             >
@@ -916,6 +924,24 @@ function FileManager({
               Delete
             </Button>
           )}
+
+          {/* Phone-only overflow menu holding the secondary actions hidden
+              above, so they never form a cramped row of tiny buttons. */}
+          <MoreActionsMenu
+            className="sm:hidden"
+            readOnly={isLocalFs}
+            hasSelection={selectedEntries.length > 0}
+            single={single}
+            selectedFiles={selectedFiles}
+            clipboardCount={clipboardCount}
+            pastePending={ops.paste.isPending}
+            onRename={(e) => setRenameTarget(e)}
+            onCopy={() => copyToClipboard(selectedEntries, "copy")}
+            onCut={() => copyToClipboard(selectedEntries, "cut")}
+            onPaste={paste}
+            onDownload={() => downloadEntries(selectedFiles)}
+            onDelete={() => setDeleteTargets(selectedEntries)}
+          />
 
           <div className="ml-auto flex items-center gap-2">
             {clipboardCount > 0 && (
@@ -1393,6 +1419,131 @@ function RowMenu({
   );
 }
 
+// --- Mobile overflow ("…") menu for the action bar -------------------------
+
+/**
+ * Phone-only "More" button that surfaces the secondary toolbar actions
+ * (Rename/Copy/Cut/Paste/Download/Delete) which are hidden under `sm`. It
+ * reuses `ui/context-menu` (the only menu primitive in the app) by dispatching
+ * a synthetic right-click on the trigger, so a normal tap opens the same styled
+ * menu. Disabled items mirror the inline buttons' enabled state.
+ */
+function MoreActionsMenu({
+  className,
+  readOnly,
+  hasSelection,
+  single,
+  selectedFiles,
+  clipboardCount,
+  pastePending,
+  onRename,
+  onCopy,
+  onCut,
+  onPaste,
+  onDownload,
+  onDelete,
+}: {
+  className?: string;
+  readOnly: boolean;
+  hasSelection: boolean;
+  single: RemoteEntry | null;
+  selectedFiles: RemoteEntry[];
+  clipboardCount: number;
+  pastePending: boolean;
+  onRename: (e: RemoteEntry) => void;
+  onCopy: () => void;
+  onCut: () => void;
+  onPaste: () => void;
+  onDownload: () => void;
+  onDelete: () => void;
+}) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  // Open the right-click menu from a normal tap/click by synthesizing a
+  // contextmenu event at the trigger's position.
+  const openMenu = () => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    el.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: r.left,
+        clientY: r.bottom,
+      }),
+    );
+  };
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <Button
+          ref={triggerRef}
+          variant="outline"
+          size="sm"
+          className={className}
+          aria-label="More actions"
+          title="More actions"
+          onClick={openMenu}
+        >
+          <MoreHorizontal className="size-4" />
+        </Button>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        {!readOnly && (
+          <>
+            <ContextMenuItem
+              disabled={!single}
+              onSelect={() => single && onRename(single)}
+            >
+              <Pencil />
+              Rename
+            </ContextMenuItem>
+            <ContextMenuItem disabled={!hasSelection} onSelect={onCopy}>
+              <Copy />
+              Copy
+            </ContextMenuItem>
+            <ContextMenuItem disabled={!hasSelection} onSelect={onCut}>
+              <Scissors />
+              Cut
+            </ContextMenuItem>
+            <ContextMenuItem
+              disabled={clipboardCount === 0 || pastePending}
+              onSelect={onPaste}
+            >
+              <Clipboard />
+              Paste{clipboardCount > 0 ? ` (${clipboardCount})` : ""}
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
+        )}
+        <ContextMenuItem
+          disabled={selectedFiles.length === 0}
+          onSelect={onDownload}
+        >
+          <Download />
+          Download
+          {selectedFiles.length > 1 ? ` (${selectedFiles.length})` : ""}
+        </ContextMenuItem>
+        {!readOnly && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              destructive
+              disabled={!hasSelection}
+              onSelect={onDelete}
+            >
+              <Trash2 />
+              Delete
+            </ContextMenuItem>
+          </>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
 // --- Views ------------------------------------------------------------------
 
 interface RowEvent {
@@ -1686,7 +1837,7 @@ function DeleteDialog({
   const hasFolder = !!targets?.some((t) => t.isDir);
   return (
     <Dialog open={!!targets} onOpenChange={(o) => !o && onCancel()}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>
             {single ? `Delete "${single.name}"?` : `Delete ${count} items?`}

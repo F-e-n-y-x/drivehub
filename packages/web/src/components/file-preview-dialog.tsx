@@ -243,9 +243,11 @@ export function FilePreviewDialog({
                       variant: "outline",
                       size: "sm",
                     })}
+                    aria-label="Download"
                   >
                     <Download className="size-4" />
-                    Download
+                    {/* Label drops on phones to keep the header from crowding. */}
+                    <span className="hidden sm:inline">Download</span>
                   </a>
                   <DialogPrimitive.Close
                     className={buttonVariants({

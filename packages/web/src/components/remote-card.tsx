@@ -166,7 +166,7 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
       )}
 
       {/* Actions */}
-      <div className="mt-auto flex items-center gap-1.5">
+      <div className="mt-auto flex flex-wrap items-center gap-1.5">
         <Button
           variant="accent"
           size="sm"
@@ -232,7 +232,7 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
       </div>
 
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Edit remote</DialogTitle>
             <DialogDescription>

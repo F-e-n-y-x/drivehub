@@ -16,7 +16,7 @@ export function RunsTable({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className="w-full min-w-[44rem] text-sm">
         <thead>
           <tr className="border-b border-border text-left text-xs font-medium text-muted-foreground">
             {jobName && <th className="px-3 py-2">Job</th>}
