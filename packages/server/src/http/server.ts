@@ -300,29 +300,58 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     return r.code === 0 ? { ok: true } : reply.code(400).send({ error: "transfer_failed", message: rcloneError(r) });
   });
 
-  // Stream a file's bytes (preview / download).
-  app.get("/api/remotes/:id/file", (req, reply) => {
+  // Stream a file's bytes (preview / download) with HTTP Range support so
+  // <video>/<audio> can seek and large files stream progressively.
+  app.get("/api/remotes/:id/file", async (req, reply) => {
     const { id } = req.params as { id: string };
     const q = req.query as { path?: string; download?: string };
-    if (!q.path) {
-      void reply.code(400).send({ error: "bad_request", message: "path required" });
-      return;
-    }
-    const remote = repo.getRemote(id);
-    if (!remote) {
-      void reply.code(404).send({ error: "not_found", message: "remote" });
-      return;
-    }
+    if (!q.path) return reply.code(400).send({ error: "bad_request", message: "path required" });
+    if (!repo.getRemote(id)) return reply.code(404).send({ error: "not_found", message: "remote" });
+
     const target = orch.remotes.target(id, q.path);
     const filename = path.posix.basename(q.path);
-    const child = orch.rclone.catProcess(target);
-    const headers: Record<string, string> = { "Content-Type": mimeFromName(filename) };
-    if (q.download != null) headers["Content-Disposition"] = `attachment; filename="${filename.replace(/"/g, "")}"`;
-    reply.raw.writeHead(200, headers);
-    child.stdout.pipe(reply.raw);
-    child.stderr.resume();
-    child.on("error", () => reply.raw.destroy());
-    req.raw.on("close", () => child.kill());
+    const total = await cachedSize(`${id}:${q.path}`, () => orch.rclone.size(target));
+    const rangeHeader = req.headers.range;
+
+    reply.hijack();
+    const headers: Record<string, string> = {
+      "Content-Type": mimeFromName(filename),
+      "Accept-Ranges": "bytes",
+    };
+    if (q.download != null) {
+      headers["Content-Disposition"] = `attachment; filename="${filename.replace(/"/g, "")}"`;
+    }
+
+    const pipe = (child: ReturnType<typeof orch.rclone.catProcess>) => {
+      child.stdout.pipe(reply.raw);
+      child.stderr.resume();
+      child.on("error", () => reply.raw.destroy());
+      req.raw.on("close", () => child.kill());
+    };
+
+    const m = rangeHeader ? /bytes=(\d*)-(\d*)/.exec(rangeHeader) : null;
+    if (m && total != null) {
+      let start = m[1] ? parseInt(m[1], 10) : 0;
+      let end = m[2] ? parseInt(m[2], 10) : total - 1;
+      if (Number.isNaN(start) || start < 0) start = 0;
+      if (Number.isNaN(end) || end >= total) end = total - 1;
+      if (start > end) {
+        reply.raw.writeHead(416, { "Content-Range": `bytes */${total}` });
+        reply.raw.end();
+        return;
+      }
+      const len = end - start + 1;
+      reply.raw.writeHead(206, {
+        ...headers,
+        "Content-Range": `bytes ${start}-${end}/${total}`,
+        "Content-Length": String(len),
+      });
+      pipe(orch.rclone.catProcess(target, { offset: start, count: len }));
+    } else {
+      if (total != null) headers["Content-Length"] = String(total);
+      reply.raw.writeHead(200, headers);
+      pipe(orch.rclone.catProcess(target));
+    }
   });
 
   // ----- local filesystem browser (for the Local remote folder picker) ---
@@ -524,6 +553,17 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
   }
 
   return app;
+}
+
+// Cache file sizes briefly so a video's many Range requests don't each shell
+// out to `rclone size`.
+const sizeCache = new Map<string, { size: number | null; at: number }>();
+async function cachedSize(key: string, fetcher: () => Promise<number | null>): Promise<number | null> {
+  const hit = sizeCache.get(key);
+  if (hit && Date.now() - hit.at < 60_000) return hit.size;
+  const size = await fetcher();
+  sizeCache.set(key, { size, at: Date.now() });
+  return size;
 }
 
 const MIME: Record<string, string> = {

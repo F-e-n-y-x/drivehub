@@ -271,9 +271,26 @@ export class RcloneService {
     return this.run(["touch", target]);
   }
 
-  /** Spawn `rclone cat` and return the process; caller pipes stdout. */
-  catProcess(target: string) {
-    return spawn(this.bin, [...this.baseArgs(), "cat", target], { windowsHide: true });
+  /** Total size in bytes of a file/path, or null if unknown. */
+  async size(target: string): Promise<number | null> {
+    const { code, stdout } = await this.run(["size", target, "--json"]);
+    if (code !== 0) return null;
+    try {
+      const j = JSON.parse(stdout) as { bytes?: number };
+      return typeof j.bytes === "number" ? j.bytes : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Spawn `rclone cat` and return the process; caller pipes stdout. Pass a
+   * byte range to stream just part of the file (enables HTTP Range / video seek).
+   */
+  catProcess(target: string, range?: { offset: number; count: number }) {
+    const args = [...this.baseArgs(), "cat", target];
+    if (range) args.push("--offset", String(range.offset), "--count", String(range.count));
+    return spawn(this.bin, args, { windowsHide: true });
   }
 
   /**
