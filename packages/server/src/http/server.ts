@@ -322,30 +322,48 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     const filename = path.posix.basename(q.path);
     const rangeHeader = req.headers.range;
 
-    // Cloud remotes stream through a cached `rclone serve http` (instant seeks,
-    // read-ahead). Local needs no cache; TeraBox's backend downloads are broken
-    // and serve can't fix them, so both keep the direct path. Any serve failure
-    // falls back to `rclone cat` below.
-    if (row.type !== "local" && row.type !== "terabox") {
+    // Proxy an upstream HTTP source (VFS server or a TeraBox CDN dlink),
+    // forwarding the Range so <video> can seek. Throws BEFORE hijacking if the
+    // upstream is unusable, so the caller can fall back to `rclone cat`.
+    const proxyFrom = async (upstreamUrl: string, extra: Record<string, string> = {}) => {
+      const resp = await fetch(upstreamUrl, {
+        headers: { ...(rangeHeader ? { range: rangeHeader } : {}), ...extra },
+      });
+      if (!resp.body || (resp.status !== 200 && resp.status !== 206)) {
+        throw new Error(`upstream responded ${resp.status}`);
+      }
+      reply.hijack();
+      const h = fileResponseHeaders(filename, q.download != null);
+      const cr = resp.headers.get("content-range");
+      const cl = resp.headers.get("content-length");
+      if (cr) h["Content-Range"] = cr;
+      if (cl) h["Content-Length"] = cl;
+      reply.raw.writeHead(resp.status, h);
+      const body = Readable.fromWeb(resp.body as Parameters<typeof Readable.fromWeb>[0]);
+      body.pipe(reply.raw);
+      body.on("error", () => reply.raw.destroy());
+      req.raw.on("close", () => body.destroy());
+    };
+
+    // TeraBox: rclone can't download it, so resolve a direct CDN link via the
+    // unofficial web API and proxy that (it supports Range, so video seeks).
+    if (row.type === "terabox") {
+      try {
+        const cookie = orch.remotes.getParam(id, "cookie");
+        if (!cookie) throw new Error("terabox remote has no cookie");
+        const { url, headers: dh } = await orch.terabox.resolveDownload(cookie, q.path);
+        await proxyFrom(url, dh);
+        return;
+      } catch (e) {
+        logger.debug({ err: String(e), id }, "terabox dlink failed; using rclone cat");
+        // fall through to the cat path (response not yet hijacked)
+      }
+    } else if (row.type !== "local") {
+      // Other cloud remotes stream through a cached `rclone serve http` (instant
+      // seeks, read-ahead). Local is already fast, so it uses the direct path.
       try {
         const upstream = await orch.media.urlFor(row.name, q.path);
-        const resp = await fetch(upstream, {
-          headers: rangeHeader ? { range: rangeHeader } : {},
-        });
-        if (!resp.body || (resp.status !== 200 && resp.status !== 206)) {
-          throw new Error(`serve responded ${resp.status}`);
-        }
-        reply.hijack();
-        const h = fileResponseHeaders(filename, q.download != null);
-        const cr = resp.headers.get("content-range");
-        const cl = resp.headers.get("content-length");
-        if (cr) h["Content-Range"] = cr;
-        if (cl) h["Content-Length"] = cl;
-        reply.raw.writeHead(resp.status, h);
-        const body = Readable.fromWeb(resp.body as Parameters<typeof Readable.fromWeb>[0]);
-        body.pipe(reply.raw);
-        body.on("error", () => reply.raw.destroy());
-        req.raw.on("close", () => body.destroy());
+        await proxyFrom(upstream);
         return;
       } catch (e) {
         logger.debug({ err: String(e), id }, "vfs serve unavailable; using rclone cat");

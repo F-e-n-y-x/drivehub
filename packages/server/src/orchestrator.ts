@@ -13,6 +13,7 @@ import { JobRunner } from "./backup/runner.js";
 import { Scheduler } from "./backup/scheduler.js";
 import { UpdateService } from "./updates/service.js";
 import { MediaServerManager } from "./media/server.js";
+import { TeraBoxClient } from "./terabox/client.js";
 
 const APP_VERSION = process.env.APP_VERSION ?? "0.1.0";
 const GIT_SHA = process.env.GIT_SHA ?? null;
@@ -30,6 +31,7 @@ export class Orchestrator {
   readonly quiescer: ContainerQuiescer;
   readonly updates: UpdateService;
   readonly media: MediaServerManager;
+  readonly terabox: TeraBoxClient;
   private readonly scheduler: Scheduler;
 
   private mode: "running" | "paused" = "running";
@@ -67,6 +69,7 @@ export class Orchestrator {
       path.join(config.DATA_DIR, "vfs-cache"),
       logger,
     );
+    this.terabox = new TeraBoxClient(logger);
   }
 
   async start(): Promise<void> {

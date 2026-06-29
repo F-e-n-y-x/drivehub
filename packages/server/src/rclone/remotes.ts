@@ -80,7 +80,7 @@ export const REMOTE_CATALOG: RemoteTypeInfo[] = [
     label: "TeraBox",
     oauth: false,
     description:
-      "Connect TeraBox with your account cookie (bundled rclone-extra backend). Browsing and uploads work; downloads/streaming are unreliable (unofficial backend).",
+      "Connect TeraBox with your account cookie. Browse, upload, download and stream (downloads use TeraBox's unofficial web API, so they can break if TeraBox changes their site or the cookie expires).",
     fields: [
       {
         key: "cookie",
@@ -287,6 +287,17 @@ export class RemoteService {
 
   private decryptParams(configEnc: string): Record<string, string> {
     return JSON.parse(decryptSecret(configEnc, this.config.TOKEN_ENCRYPTION_KEY));
+  }
+
+  /** A single decrypted config value for a remote (e.g. a TeraBox cookie). */
+  getParam(remoteId: string, key: string): string | null {
+    const row = this.repo.getRemote(remoteId);
+    if (!row) return null;
+    try {
+      return this.decryptParams(row.configEnc)[key] ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /** Create a key/password remote (non-OAuth) from validated form params. */

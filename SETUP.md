@@ -161,12 +161,11 @@ with a native `terabox` backend), so it works with no AList needed.
 
 That's it — TeraBox appears as a normal remote you can browse.
 
-Caveat: TeraBox has no official API, so this relies on an **unofficial** backend.
-Browsing and **uploads** work; **downloads/streaming are unreliable** (so
-previewing TeraBox videos may fail). The cookie also expires periodically (just
-re-add it). For reliable TeraBox **reading**, run your own
-[AList](https://alist.nn.ci)/OpenList server and connect it via
-**Add remote → AList / OpenList** (WebDAV URL).
+Browse, upload, **download and stream** all work. Downloads use TeraBox's
+unofficial web API directly (the bundled rclone backend can't download), so they
+can break if TeraBox changes their site or your cookie expires — just re-add the
+cookie when that happens. TeraBox has no official API, so treat it as
+best-effort.
 
 > Note: the bundled rclone is the **rclone-extra** community fork (a superset of
 > official rclone — all standard backends plus terabox/teldrive/alldebrid). To
