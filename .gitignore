@@ -19,8 +19,9 @@ sync-folder/
 *.sqlite-journal
 *.db
 
-# Logs
-logs/
+# Logs (runtime only — anchored to repo root so it doesn't match source dirs
+# like packages/server/src/logs)
+/logs/
 *.log
 
 # Editor / OS
