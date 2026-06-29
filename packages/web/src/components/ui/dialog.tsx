@@ -31,7 +31,10 @@ export const DialogContent = React.forwardRef<
       ref={ref}
       data-dh-content=""
       className={cn(
-        "fixed left-1/2 top-1/2 z-50 grid w-full max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl border border-border bg-popover p-6 text-popover-foreground shadow-xl",
+        // Cap height so a tall dialog (long field lists) scrolls inside the
+        // viewport instead of overflowing the screen; uses the design-system
+        // scrollbar via .dh-scroll (styled thumb + stable gutter).
+        "dh-scroll fixed left-1/2 top-1/2 z-50 grid max-h-[88dvh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl border border-border bg-popover p-6 text-popover-foreground shadow-xl",
         className,
       )}
       {...props}

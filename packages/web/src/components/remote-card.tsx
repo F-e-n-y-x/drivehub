@@ -26,6 +26,7 @@ import {
   useRemoteMutations,
   useRenameRemote,
   useRunSpeedTest,
+  useSettings,
   useSpeedTest,
 } from "@/hooks/queries";
 import { NamePromptDialog } from "@/components/name-prompt-dialog";
@@ -62,6 +63,8 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
   const speedTest = useRunSpeedTest();
   const lastSpeed = useSpeedTest(remote.id);
   const about = useRemoteAbout(remote.id);
+  const settings = useSettings();
+  const testSizeMb = settings.data?.speedTestSizeMb ?? 32;
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const speed = lastSpeed.data ?? null;
@@ -163,7 +166,7 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
           <FolderOpen className="size-3.5" />
           Browse
         </Button>
-        <SimpleTooltip label="Uploads & downloads a 16 MB test file">
+        <SimpleTooltip label={`Uploads & downloads a ${testSizeMb} MB test file`}>
           <Button
             variant="outline"
             size="sm"
@@ -210,8 +213,9 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
               size="icon-sm"
               aria-label="Delete remote"
               onClick={() => setConfirmOpen(true)}
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
             >
-              <Trash2 className="size-3.5 text-muted-foreground" />
+              <Trash2 className="size-3.5" />
             </Button>
           </SimpleTooltip>
         </div>

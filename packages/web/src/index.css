@@ -143,7 +143,13 @@
     background-color: hsl(var(--accent) / 0.22);
   }
 
-  /* Refined scrollbars */
+  /* Refined, design-system scrollbars — applied everywhere, with a Firefox
+     fallback. Use the `.dh-scroll` utility on any scroll container so it always
+     gets this treatment (and a stable gutter so content doesn't jump). */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+  }
   ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
@@ -159,6 +165,15 @@
   }
   ::-webkit-scrollbar-thumb:hover {
     background-color: hsl(var(--muted-foreground) / 0.45);
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Opt-in class for explicit scroll regions (dialogs, panels). */
+  .dh-scroll {
+    overflow-y: auto;
+    scrollbar-gutter: stable;
   }
 }
 
