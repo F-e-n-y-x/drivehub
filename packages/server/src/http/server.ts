@@ -177,15 +177,25 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     }
   });
 
-  // Edit basic remote properties (currently just the display label).
+  // Edit basic remote properties: display label, and an optional display email
+  // (handy when a backend can't report an account email, e.g. TeraBox).
   app.patch("/api/remotes/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const b = (req.body ?? {}) as { label?: string };
+    const b = (req.body ?? {}) as { label?: string; email?: string };
     const row = repo.getRemote(id);
     if (!row) return reply.code(404).send({ error: "not_found", message: "remote" });
     const label = (b.label ?? "").trim();
     if (!label) return reply.code(400).send({ error: "bad_request", message: "label required" });
-    repo.updateRemote(id, { label });
+    const patch: { label: string; summary?: string } = { label };
+    if (b.email !== undefined) {
+      let summary: Record<string, string> = {};
+      try { summary = JSON.parse(row.summary) as Record<string, string>; } catch { /* keep {} */ }
+      const email = b.email.trim();
+      if (email) summary.email = email;
+      else delete summary.email;
+      patch.summary = JSON.stringify(summary);
+    }
+    repo.updateRemote(id, patch);
     const updated = toRemotePublic(repo.getRemote(id)!);
     orch.bus.emit({ type: "remote", payload: updated });
     return updated;

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowDown,
@@ -29,7 +29,7 @@ import {
   useSettings,
   useSpeedTest,
 } from "@/hooks/queries";
-import { NamePromptDialog } from "@/components/name-prompt-dialog";
+import { Input } from "@/components/ui/input";
 import { cn, formatBytes, formatRelativeTime, formatSpeed } from "@/lib/utils";
 import {
   Dialog,
@@ -67,7 +67,17 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
   const testSizeMb = settings.data?.speedTestSizeMb ?? 32;
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [editLabel, setEditLabel] = useState(remote.label);
+  const [editEmail, setEditEmail] = useState(remote.summary.email ?? "");
   const speed = lastSpeed.data ?? null;
+
+  // Re-seed the edit form whenever the dialog opens.
+  useEffect(() => {
+    if (renameOpen) {
+      setEditLabel(remote.label);
+      setEditEmail(remote.summary.email ?? "");
+    }
+  }, [renameOpen, remote.label, remote.summary.email]);
 
   const email = remote.summary.email;
   // Detail grid: Type is always shown; whitelist the rest, capped so the card
@@ -221,23 +231,56 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
         </div>
       </div>
 
-      <NamePromptDialog
-        open={renameOpen}
-        onOpenChange={setRenameOpen}
-        title="Rename remote"
-        description={`Change the display name for "${remote.label}".`}
-        label="Name"
-        placeholder="My Drive"
-        initialValue={remote.label}
-        confirmLabel="Save"
-        pending={rename.isPending}
-        onConfirm={(label) =>
-          rename.mutate(
-            { id: remote.id, label },
-            { onSuccess: () => setRenameOpen(false) },
-          )
-        }
-      />
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Edit remote</DialogTitle>
+            <DialogDescription>
+              Change how this remote appears. The email is just a label — set it
+              when a backend can't report your account (e.g. TeraBox).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Name</label>
+              <Input
+                value={editLabel}
+                placeholder="My Drive"
+                onChange={(e) => setEditLabel(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                Email / account label <span className="font-normal">(optional)</span>
+              </label>
+              <Input
+                value={editEmail}
+                placeholder="you@example.com"
+                onChange={(e) => setEditEmail(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="accent"
+              disabled={!editLabel.trim() || rename.isPending}
+              onClick={() =>
+                rename.mutate(
+                  { id: remote.id, label: editLabel.trim(), email: editEmail.trim() },
+                  { onSuccess: () => setRenameOpen(false) },
+                )
+              }
+            >
+              {rename.isPending && <Loader2 className="size-4 animate-spin" />}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>

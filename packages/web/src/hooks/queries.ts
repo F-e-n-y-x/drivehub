@@ -239,12 +239,12 @@ export function useRemoteMutations() {
 export function useRenameRemote() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, label }: { id: string; label: string }) =>
-      api.renameRemote(id, label),
+    mutationFn: ({ id, label, email }: { id: string; label: string; email?: string }) =>
+      api.renameRemote(id, label, email),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: qk.remotes });
       qc.invalidateQueries({ queryKey: qk.status });
-      toast.success("Remote renamed", { description: r.label });
+      toast.success("Remote updated", { description: r.label });
     },
     onError: (e: Error) =>
       toast.error("Couldn't rename remote", { description: e.message }),

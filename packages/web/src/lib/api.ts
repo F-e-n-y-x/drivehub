@@ -229,10 +229,12 @@ export const api = {
       method: "POST",
       json: body,
     }),
-  renameRemote: (id: string, label: string) =>
+  // Edit a remote's display label and, optionally, a display email (pass "" to
+  // clear it). Useful when a backend can't report an account email (e.g. TeraBox).
+  renameRemote: (id: string, label: string, email?: string) =>
     request<RemotePublic>(`/api/remotes/${encodeURIComponent(id)}`, {
       method: "PATCH",
-      json: { label },
+      json: email === undefined ? { label } : { label, email },
     }),
   testRemote: (id: string) =>
     request<{ ok: boolean; error?: string }>(
