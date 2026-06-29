@@ -45,6 +45,26 @@ export function TerminalPage() {
           className="h-full w-full"
           // ttyd needs to capture keyboard/clipboard
           allow="clipboard-read; clipboard-write"
+          // The terminal is same-origin (proxied), so inject scrollbar styling
+          // to match the app instead of ttyd's bright default.
+          onLoad={(e) => {
+            try {
+              const doc = e.currentTarget.contentDocument;
+              if (!doc) return;
+              const style = doc.createElement("style");
+              style.textContent = `
+                :root, body { color-scheme: dark; background: #111114; }
+                *::-webkit-scrollbar { width: 10px; height: 10px; }
+                *::-webkit-scrollbar-track { background: transparent; }
+                *::-webkit-scrollbar-thumb { background-color: rgba(130,130,140,.32); border-radius: 9999px; border: 2px solid transparent; background-clip: content-box; }
+                *::-webkit-scrollbar-thumb:hover { background-color: rgba(130,130,140,.5); }
+                * { scrollbar-width: thin; scrollbar-color: rgba(130,130,140,.4) transparent; }
+              `;
+              doc.head.appendChild(style);
+            } catch {
+              /* cross-origin (shouldn't happen) — ignore */
+            }
+          }}
         />
       </div>
     </div>

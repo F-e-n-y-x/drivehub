@@ -122,6 +122,19 @@ export function useTerminal() {
   });
 }
 
+export function useSetTerminal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (enabled: boolean) => api.setTerminal(enabled),
+    onSuccess: (s) => {
+      qc.setQueryData(["terminal"], s);
+      qc.invalidateQueries({ queryKey: ["terminal"] });
+    },
+    onError: (e: Error) =>
+      toast.error("Couldn't change the terminal", { description: e.message }),
+  });
+}
+
 // --- Engine ---------------------------------------------------------------
 
 export function useEngineControl() {

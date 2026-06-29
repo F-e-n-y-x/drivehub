@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import type { AppConfig } from "../config.js";
+import type { Repo } from "../db/repo.js";
 import type { Logger } from "../logger.js";
 
 /**
@@ -17,22 +18,52 @@ export const TERMINAL_BASE_PATH = "/terminal-pty";
 
 export class TerminalManager {
   private child: ChildProcess | null = null;
+  /** Runtime on/off (toggled in Settings → Developer), persisted in the DB. */
+  private active: boolean;
 
   constructor(
     private readonly config: AppConfig,
     private readonly logger: Logger,
-  ) {}
+    private readonly repo: Repo,
+  ) {
+    const persisted = repo.kvGet("terminal:active");
+    this.active = persisted != null ? persisted === "true" : config.ENABLE_TERMINAL;
+  }
 
-  get enabled(): boolean {
+  /** Whether the feature is permitted at all (admin gate via env). */
+  get available(): boolean {
     return this.config.ENABLE_TERMINAL;
+  }
+
+  /** Whether the terminal is on (gate + runtime toggle). */
+  get enabled(): boolean {
+    return this.available && this.active;
   }
 
   get port(): number {
     return this.config.TERMINAL_PORT;
   }
 
+  /** Boot: start ttyd if the feature is enabled. */
   start(): void {
-    if (!this.config.ENABLE_TERMINAL) return;
+    if (this.enabled) this.spawn();
+  }
+
+  /** Toggle from the UI. Throws if the feature isn't permitted by config. */
+  setActive(on: boolean): void {
+    if (!this.available) {
+      throw new Error("The terminal is disabled by configuration. Set ENABLE_TERMINAL=true to use it.");
+    }
+    this.active = on;
+    this.repo.kvSet("terminal:active", String(on));
+    if (on) {
+      if (!this.child) this.spawn();
+    } else {
+      this.stop();
+    }
+  }
+
+  private spawn(): void {
     const bin = this.config.TERMINAL_BIN ?? "ttyd";
     // xterm theme matching the DriveHub dark UI (zinc surface, indigo accent).
     const theme = JSON.stringify({
@@ -81,9 +112,10 @@ export class TerminalManager {
     this.child = null;
   }
 
-  status(): { enabled: boolean; running: boolean; path: string } {
+  status(): { available: boolean; enabled: boolean; running: boolean; path: string } {
     return {
-      enabled: this.config.ENABLE_TERMINAL,
+      available: this.available,
+      enabled: this.enabled,
       running: this.child !== null && this.child.exitCode === null,
       path: TERMINAL_BASE_PATH,
     };

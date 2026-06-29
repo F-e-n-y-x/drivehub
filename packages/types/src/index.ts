@@ -307,6 +307,9 @@ export interface UpdateStatus {
 // ---------------------------------------------------------------------------
 
 export interface TerminalStatus {
+  /** Whether the feature is permitted by config (ENABLE_TERMINAL). */
+  available: boolean;
+  /** Whether it's currently on (gate + the Settings toggle). */
   enabled: boolean;
   running: boolean;
   /** Same-origin path DriveHub reverse-proxies the terminal at (e.g. /terminal). */

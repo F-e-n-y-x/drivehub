@@ -338,6 +338,8 @@ export const api = {
   // System info (About / diagnostics)
   getSystem: () => request<SystemInfo>("/api/system"),
   getTerminal: () => request<TerminalStatus>("/api/terminal"),
+  setTerminal: (enabled: boolean) =>
+    request<TerminalStatus>("/api/terminal", { method: "PUT", json: { enabled } }),
 
   // Logs (in-app developer viewer)
   getLogs: (limit?: number) =>

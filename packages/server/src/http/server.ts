@@ -75,9 +75,12 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
   void app.register(cookie);
 
   // Reverse-proxy the optional built-in terminal (ttyd on localhost) so it opens
-  // inline at /terminal — same origin, no extra port or basic-auth prompt. ttyd
-  // serves under its own base path, so we keep the prefix on the upstream.
-  if (orch.terminal.enabled) {
+  // inline at /terminal-pty — same origin, no extra port or basic-auth prompt.
+  // Registered when the feature is permitted (env gate) so the runtime toggle
+  // can start/stop ttyd without a redeploy; when ttyd is off the route just
+  // errors and the UI shows the disabled state. ttyd serves under its own base
+  // path, so we keep the prefix on the upstream.
+  if (orch.terminal.available) {
     void app.register(httpProxy, {
       upstream: `http://127.0.0.1:${orch.terminal.port}`,
       prefix: "/terminal-pty",
@@ -94,6 +97,15 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
   app.get("/api/status", async () => orch.getStatus());
   app.get("/api/system", async () => orch.systemInfo());
   app.get("/api/terminal", async () => orch.terminal.status());
+  app.put("/api/terminal", async (req, reply) => {
+    const b = (req.body ?? {}) as { enabled?: boolean };
+    try {
+      orch.terminal.setActive(Boolean(b.enabled));
+      return orch.terminal.status();
+    } catch (e) {
+      return reply.code(400).send({ error: "terminal_toggle_failed", message: String((e as Error).message ?? e) });
+    }
+  });
 
   app.post("/api/engine/pause", async () => {
     orch.pause();

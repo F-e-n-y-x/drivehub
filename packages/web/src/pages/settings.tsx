@@ -2,7 +2,12 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Loader2, Save, Terminal } from "lucide-react";
 import type { AppSettings } from "@drivehub/types";
-import { useSettings, useSaveSettings } from "@/hooks/queries";
+import {
+  useSettings,
+  useSaveSettings,
+  useTerminal,
+  useSetTerminal,
+} from "@/hooks/queries";
 import { UpdatesSection } from "@/components/settings/updates-section";
 import { SystemSection } from "@/components/settings/system-section";
 import { TerminalCard } from "@/components/settings/terminal-card";
@@ -60,6 +65,8 @@ export function SettingsPage() {
   const setTheme = useUIStore((s) => s.setTheme);
   const showLogs = useUIStore((s) => s.showLogs);
   const setShowLogs = useUIStore((s) => s.setShowLogs);
+  const terminal = useTerminal();
+  const setTerminal = useSetTerminal();
   const { hash } = useLocation();
 
   const [form, setForm] = useState<AppSettings | null>(null);
@@ -257,6 +264,24 @@ export function SettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <Row
+            label="Web terminal"
+            description={
+              terminal.data && !terminal.data.available
+                ? "A shell into the container. Set ENABLE_TERMINAL=true on the container to allow it."
+                : "A shell into the container (rclone config, debugging). Turning it on shows a Terminal page in the sidebar."
+            }
+          >
+            <Switch
+              checked={!!terminal.data?.enabled}
+              disabled={!terminal.data?.available || setTerminal.isPending}
+              onCheckedChange={(v) => setTerminal.mutate(v)}
+              aria-label="Web terminal"
+            />
+          </Row>
+
+          <div className="h-px bg-border" />
+
           <Row
             label="Show Logs page"
             description="Adds a Logs page to the sidebar for full-screen log viewing."

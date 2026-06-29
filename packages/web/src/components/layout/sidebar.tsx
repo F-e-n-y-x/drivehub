@@ -3,6 +3,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   Github,
+  Settings,
   Terminal,
   TerminalSquare,
   type LucideIcon,
@@ -125,6 +126,13 @@ export function Sidebar() {
             collapsed={collapsed}
           />
         )}
+        {/* Settings sits at the bottom of the nav (a common convention). */}
+        <NavItemLink
+          to="/settings"
+          label="Settings"
+          icon={Settings}
+          collapsed={collapsed}
+        />
       </nav>
 
       <div className="px-2.5 pb-1">

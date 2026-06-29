@@ -73,7 +73,7 @@ export class Orchestrator {
     );
     this.terabox = new TeraBoxClient(logger);
     this.remotes.setTeraboxClient(this.terabox);
-    this.terminal = new TerminalManager(config, logger);
+    this.terminal = new TerminalManager(config, logger, this.repo);
   }
 
   async start(): Promise<void> {

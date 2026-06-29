@@ -54,13 +54,19 @@ export function TerminalCard() {
               </Button>
             </Link>
           </>
+        ) : data && !data.available ? (
+          <div className="space-y-2 rounded-lg bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
+            <p>
+              Disabled by configuration (it's a full shell on an unauthenticated app). To allow it,
+              set <span className="font-mono text-foreground">ENABLE_TERMINAL=true</span> on the
+              container and redeploy — then toggle it on under Developer below.
+            </p>
+          </div>
         ) : (
           <div className="space-y-2 rounded-lg bg-muted/40 p-3 text-xs leading-relaxed text-muted-foreground">
             <p>
-              Disabled by default (it's a full shell on an unauthenticated app). To enable it, set
-              <span className="font-mono text-foreground"> ENABLE_TERMINAL=true</span> on the
-              container and redeploy. It then appears in the sidebar and opens inline — no extra port
-              or password needed.
+              Turn on <span className="font-medium text-foreground">Web terminal</span> under
+              Developer below to open an in-app shell (it then appears in the sidebar).
             </p>
           </div>
         )}

@@ -26,13 +26,21 @@ export function AppLayout() {
           scrollHeight, which appears as phantom empty scroll space below the
           content (most visible on /settings).
         */}
-        <main className="relative flex-1 overflow-y-auto">
+        {/* The Browser manages its own internal scrolling (sticky toolbar +
+            scrollable list), so it needs a full-height, non-scrolling wrapper.
+            Other pages scroll normally in <main>. */}
+        <main
+          className={cn(
+            "relative flex-1",
+            fullWidth ? "overflow-hidden" : "overflow-y-auto",
+          )}
+        >
           <div
             className={cn(
-              "w-full py-8",
+              "w-full",
               fullWidth
-                ? "px-5 sm:px-6"
-                : "mx-auto max-w-[100rem] px-5 sm:px-8",
+                ? "h-full px-5 py-5 sm:px-6"
+                : "mx-auto max-w-[100rem] px-5 py-8 sm:px-8",
             )}
           >
             <Outlet />
