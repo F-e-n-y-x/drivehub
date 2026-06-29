@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { PanelLeftClose, PanelLeft } from "lucide-react";
+import { PanelLeftClose, PanelLeft, Github } from "lucide-react";
 import { navItems } from "./nav";
 import { UpdateWidget } from "./update-widget";
 import { useUIStore } from "@/store/ui";
@@ -82,7 +82,31 @@ export function Sidebar() {
         <UpdateWidget collapsed={collapsed} />
       </div>
 
-      <div className="border-t border-border p-2.5">
+      <div className="space-y-0.5 border-t border-border p-2.5">
+        {(() => {
+          const repo = (
+            <a
+              href="https://github.com/F-e-n-y-x/drivehub"
+              target="_blank"
+              rel="noreferrer noopener"
+              className={cn(
+                "flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground",
+                collapsed && "justify-center px-0",
+              )}
+            >
+              <Github className="size-[18px] shrink-0" />
+              {!collapsed && <span className="flex-1">GitHub</span>}
+            </a>
+          );
+          return collapsed ? (
+            <SimpleTooltip label="View on GitHub" side="right">
+              {repo}
+            </SimpleTooltip>
+          ) : (
+            repo
+          );
+        })()}
+
         <button
           onClick={toggle}
           className={cn(

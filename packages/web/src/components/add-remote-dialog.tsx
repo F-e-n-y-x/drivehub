@@ -1,5 +1,11 @@
-import { useMemo, useState } from "react";
-import { ArrowLeft, ChevronDown, ExternalLink, Loader2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  ChevronDown,
+  ExternalLink,
+  Loader2,
+} from "lucide-react";
 import type { RemoteTypeInfo } from "@drivehub/types";
 import {
   Dialog,
@@ -16,9 +22,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Field } from "@/components/field";
 import { RemoteTypeFields } from "@/components/remote-type-fields";
 import { remoteIcon } from "@/lib/remotes";
-import { useRemoteCatalog, useRemoteMutations } from "@/hooks/queries";
+import { useRemoteCatalog, useRemoteMutations, useRemotes } from "@/hooks/queries";
+import { toast } from "@/components/ui/toast";
 
 type Step = "pick" | "form";
+
+// How long to wait for the OAuth tab to complete before giving up. The flow
+// is: open Google in a new tab → user authorizes → backend creates the remote
+// and emits a `remote` SSE event → our remotes query updates → we detect the
+// new id here.
+const CONNECT_TIMEOUT_MS = 3 * 60_000;
 
 export function AddRemoteDialog({
   open,
@@ -29,6 +42,7 @@ export function AddRemoteDialog({
 }) {
   const { data: catalog, isLoading } = useRemoteCatalog();
   const { create, createOAuth } = useRemoteMutations();
+  const { data: remotes } = useRemotes();
 
   const [step, setStep] = useState<Step>("pick");
   const [selected, setSelected] = useState<RemoteTypeInfo | null>(null);
@@ -39,13 +53,34 @@ export function AddRemoteDialog({
   // redirect button (needed when accessing DriveHub via an IP address).
   const [driveTokenMode, setDriveTokenMode] = useState(false);
 
+  // Live OAuth-redirect connection status. `idle` = normal form; `connecting`
+  // = waiting for the Google tab to finish; `connected` = a new remote
+  // appeared and we're about to close.
+  type ConnectPhase = "idle" | "connecting" | "connected";
+  const [connectPhase, setConnectPhase] = useState<ConnectPhase>("idle");
+  const [connectHint, setConnectHint] = useState<string | null>(null);
+  // Remote ids captured the moment the user clicked Connect, so we can detect
+  // the *new* one that the OAuth flow creates.
+  const knownIdsRef = useRef<Set<string>>(new Set());
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearConnectTimeout = () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  };
+
   const reset = () => {
+    clearConnectTimeout();
     setStep("pick");
     setSelected(null);
     setLabel("");
     setParams({});
     setToken("");
     setDriveTokenMode(false);
+    setConnectPhase("idle");
+    setConnectHint(null);
   };
 
   const close = (next: boolean) => {
@@ -77,13 +112,55 @@ export function AddRemoteDialog({
   // Any path that submits an rclone token JSON.
   const isTokenPaste = isOtherOAuth || (isGoogle && driveTokenMode);
 
+  // Detect a freshly-connected OAuth remote: while we're waiting on the Google
+  // tab, watch the remotes list for an id we hadn't seen at click time.
+  useEffect(() => {
+    if (connectPhase !== "connecting" || !remotes) return;
+    const fresh = remotes.find((r) => !knownIdsRef.current.has(r.id));
+    if (!fresh) return;
+    clearConnectTimeout();
+    setConnectPhase("connected");
+    toast.success("Google Drive connected", { description: fresh.label });
+    const t = setTimeout(() => close(false), 1200);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectPhase, remotes]);
+
+  // Clean up any pending timeout if the dialog unmounts.
+  useEffect(() => () => clearConnectTimeout(), []);
+
+  const startRedirectConnect = (info: RemoteTypeInfo) => {
+    knownIdsRef.current = new Set((remotes ?? []).map((r) => r.id));
+    setConnectHint(null);
+    setConnectPhase("connecting");
+    // Open the provider sign-in in a new tab so the user keeps DriveHub open
+    // here and watches the live status.
+    window.open(
+      `/api/oauth/google/start?label=${encodeURIComponent(
+        label || info.label,
+      )}`,
+      "_blank",
+      "noopener",
+    );
+    clearConnectTimeout();
+    timeoutRef.current = setTimeout(() => {
+      setConnectPhase("idle");
+      setConnectHint(
+        "Didn't detect a connection — make sure you finished sign-in in the other tab.",
+      );
+    }, CONNECT_TIMEOUT_MS);
+  };
+
+  const cancelConnect = () => {
+    clearConnectTimeout();
+    setConnectPhase("idle");
+    setConnectHint(null);
+  };
+
   const submit = () => {
     if (!selected) return;
     if (isGoogleRedirect) {
-      // Navigate to the server OAuth start; it 302s to Google and back.
-      window.location.href = `/api/oauth/google/start?label=${encodeURIComponent(
-        label || selected.label,
-      )}`;
+      startRedirectConnect(selected);
       return;
     }
     if (isTokenPaste) {
@@ -155,17 +232,59 @@ export function AddRemoteDialog({
           selected && (
             <>
               <DialogHeader>
-                <button
-                  onClick={() => setStep("pick")}
-                  className="mb-1 inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-                >
-                  <ArrowLeft className="size-3.5" />
-                  All providers
-                </button>
+                {connectPhase === "idle" && (
+                  <button
+                    onClick={() => setStep("pick")}
+                    className="mb-1 inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+                  >
+                    <ArrowLeft className="size-3.5" />
+                    All providers
+                  </button>
+                )}
                 <DialogTitle>Connect {selected.label}</DialogTitle>
                 <DialogDescription>{selected.description}</DialogDescription>
               </DialogHeader>
 
+              {connectPhase !== "idle" ? (
+                <>
+                  <div className="flex flex-col items-center gap-3 px-2 py-8 text-center">
+                    {connectPhase === "connecting" ? (
+                      <>
+                        <Loader2 className="size-7 animate-spin text-accent" />
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-foreground">
+                            Connecting…
+                          </p>
+                          <p className="text-[13px] text-muted-foreground leading-relaxed">
+                            Continue in the Google tab that just opened, then
+                            come back here.
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="size-7 text-synced" />
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-foreground">
+                            Connected ✓
+                          </p>
+                          <p className="text-[13px] text-muted-foreground">
+                            Wrapping up…
+                          </p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  {connectPhase === "connecting" && (
+                    <DialogFooter>
+                      <Button variant="outline" onClick={cancelConnect}>
+                        Cancel
+                      </Button>
+                    </DialogFooter>
+                  )}
+                </>
+              ) : (
+                <>
               <div className="max-h-[55vh] space-y-3.5 overflow-y-auto pr-1">
                 <Field label="Label" htmlFor="remote-label" required>
                   <Input
@@ -242,6 +361,12 @@ export function AddRemoteDialog({
                     }
                   />
                 )}
+
+                {connectHint && (
+                  <p className="rounded-lg bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground leading-relaxed">
+                    {connectHint}
+                  </p>
+                )}
               </div>
 
               <DialogFooter>
@@ -264,6 +389,8 @@ export function AddRemoteDialog({
                   )}
                 </Button>
               </DialogFooter>
+                </>
+              )}
             </>
           )
         )}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { HardDrive, Plus } from "lucide-react";
+import { CheckCircle2, HardDrive, Plus } from "lucide-react";
 import { useRemotes } from "@/hooks/queries";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -16,10 +16,26 @@ export function RemotesPage() {
   const [adding, setAdding] = useState(false);
   const [params, setParams] = useSearchParams();
 
+  // When this page was opened *as the OAuth tab* (via window.open from the Add
+  // Remote dialog), close it automatically so the user lands back on the
+  // original DriveHub tab — the dialog there detects the new remote live.
+  const [returning, setReturning] = useState(false);
+
   // Handle redirect back from the Google OAuth flow.
   useEffect(() => {
     const connected = params.get("connected");
     const error = params.get("error");
+    const openedAsTab = typeof window !== "undefined" && !!window.opener;
+
+    if ((connected || error) && openedAsTab) {
+      // This is the popup/new tab returning from Google. Show a brief state and
+      // close so focus returns to the original tab, which handles the toast and
+      // list refresh itself.
+      setReturning(true);
+      const t = setTimeout(() => window.close(), 1000);
+      return () => clearTimeout(t);
+    }
+
     if (connected) {
       toast.success("Remote connected", { description: connected });
       refetch();
@@ -40,6 +56,27 @@ export function RemotesPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  if (returning) {
+    const ok = !params.get("error");
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 text-center">
+        {ok ? (
+          <CheckCircle2 className="size-8 text-synced" />
+        ) : (
+          <HardDrive className="size-8 text-muted-foreground" />
+        )}
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-foreground">
+            {ok ? "Connected ✓" : "Couldn't connect"}
+          </p>
+          <p className="text-[13px] text-muted-foreground">
+            Returning you to DriveHub…
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

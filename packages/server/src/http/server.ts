@@ -237,7 +237,7 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     try {
       const conn = await exchangeCodeForRclone(config, q.code);
       const label = req.cookies[LABEL_COOKIE] || conn.email || "Google Drive";
-      await orch.remotes.createOAuth({
+      const remote = await orch.remotes.createOAuth({
         type: "drive",
         label,
         tokenJson: conn.rcloneTokenJson,
@@ -248,6 +248,8 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
         },
       });
       orch.onRemotesChanged();
+      // Announce the new remote so any open tab updates its connect status live.
+      orch.bus.emit({ type: "remote", payload: remote });
       return reply.redirect(`/remotes?connected=${encodeURIComponent(conn.email)}`);
     } catch (err) {
       logger.error({ err: String(err) }, "google oauth callback failed");
