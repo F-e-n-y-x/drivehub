@@ -48,17 +48,15 @@ export class TeraBoxClient {
     const info = (meta.body.info as Array<{ fs_id?: number | string; dlink?: string }> | undefined)?.[0];
     if (!info) throw new Error(`terabox filemetas returned no info (errno=${meta.body.errno})`);
 
-    // Primary: official sign-based download (re-resolved fresh, CDN token is
-    // short-lived). Fall back to the dlna dlink if anything in it fails.
-    if (info.fs_id != null) {
-      try {
-        const url = await this.officialDownload(cookie, String(info.fs_id));
-        if (url) return { url, headers: { "User-Agent": UA, Cookie: cookie } };
-      } catch (e) {
-        this.logger.debug({ err: String(e) }, "terabox official download failed; trying dlna");
-      }
-    }
+    // Primary: the dlna dlink we already got from filemetas — one call, proven
+    // reliable. The official sign-based flow (3 extra sequential calls) is only
+    // a fallback for when filemetas doesn't return a dlink, since on slow/flaky
+    // accounts those extra calls just time out.
     if (info.dlink) return { url: info.dlink, headers: { "User-Agent": UA, Cookie: cookie } };
+    if (info.fs_id != null) {
+      const url = await this.officialDownload(cookie, String(info.fs_id));
+      if (url) return { url, headers: { "User-Agent": UA, Cookie: cookie } };
+    }
     throw new Error("terabox: could not resolve a download link");
   }
 
@@ -195,9 +193,10 @@ export class TeraBoxClient {
   }
 }
 
-/** fetch with a hard timeout so a stalled TeraBox call can't hang a request. */
+/** fetch with a hard timeout so a stalled TeraBox call can't hang a request,
+ * but generous enough for TeraBox's often-slow unofficial API. */
 function tfetch(input: string | URL, init: RequestInit = {}): Promise<Response> {
-  return fetch(input, { ...init, signal: AbortSignal.timeout(8000) });
+  return fetch(input, { ...init, signal: AbortSignal.timeout(25_000) });
 }
 
 /**

@@ -417,16 +417,22 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     // TeraBox: rclone can't download it, so resolve a direct CDN link via the
     // unofficial web API and proxy that (it supports Range, so video seeks).
     if (row.type === "terabox") {
-      try {
-        const cookie = orch.remotes.getParam(id, "cookie");
-        if (!cookie) throw new Error("terabox remote has no cookie");
-        const { url, headers: dh } = await orch.terabox.resolveDownload(cookie, q.path);
-        await proxyFrom(url, dh);
-        return;
-      } catch (e) {
-        logger.warn({ err: String(e), id, path: q.path }, "terabox direct download failed; falling back to rclone cat");
-        // fall through to the cat path (response not yet hijacked)
+      const cookie = orch.remotes.getParam(id, "cookie");
+      // Resolve + proxy can fail transiently (slow API, CDN hiccup); retry once
+      // before falling back. proxyFrom only hijacks after a good response, so a
+      // pre-hijack throw is safe to retry / fall through.
+      for (let attempt = 0; cookie && attempt < 2; attempt++) {
+        try {
+          const { url, headers: dh } = await orch.terabox.resolveDownload(cookie, q.path);
+          await proxyFrom(url, dh);
+          return;
+        } catch (e) {
+          if (attempt === 1) {
+            logger.warn({ err: String(e), id, path: q.path }, "terabox direct download failed; falling back to rclone cat");
+          }
+        }
       }
+      // fall through to the cat path (response not yet hijacked)
     } else if (row.type !== "local") {
       // Other cloud remotes stream through a cached `rclone serve http` (instant
       // seeks, read-ahead). Local is already fast, so it uses the direct path.
