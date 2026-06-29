@@ -240,6 +240,26 @@ function buildSummary(type: RemoteType, params: Record<string, string>): Record<
   return out;
 }
 
+/** Resolve a OneDrive remote's drive_id + drive_type from Microsoft Graph. */
+async function resolveOnedriveDrive(
+  tokenJson: string,
+): Promise<{ drive_id: string; drive_type: string } | null> {
+  try {
+    const token = JSON.parse(tokenJson) as { access_token?: string };
+    if (!token.access_token) return null;
+    const res = await fetch("https://graph.microsoft.com/v1.0/me/drive", {
+      headers: { Authorization: `Bearer ${token.access_token}` },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    const j = (await res.json()) as { id?: string; driveType?: string };
+    if (!j.id) return null;
+    return { drive_id: j.id, drive_type: j.driveType ?? "personal" };
+  } catch {
+    return null;
+  }
+}
+
 function sanitizeName(label: string, existing: Set<string>): string {
   const base = label
     .toLowerCase()
@@ -372,6 +392,13 @@ export class RemoteService {
     knownEmail?: string | null;
   }): Promise<RemotePublic> {
     const params: Record<string, string> = { token: input.tokenJson, ...(input.extra ?? {}) };
+    // OneDrive needs drive_id + drive_type (rclone's `config` normally asks for
+    // these). `rclone authorize` only returns the token, so resolve them from
+    // Microsoft Graph using the access token before creating the remote.
+    if (input.type === "onedrive" && !params.drive_id) {
+      const d = await resolveOnedriveDrive(input.tokenJson);
+      if (d) Object.assign(params, d);
+    }
     const remote = await this.create({ type: input.type, label: input.label, params });
     // Prefer the email from the OAuth flow; fall back to an rclone lookup.
     const email = input.knownEmail ?? (await this.fetchAccountEmail(remote.name));
