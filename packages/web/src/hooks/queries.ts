@@ -252,12 +252,30 @@ export function useRenameRemote() {
 }
 
 /**
- * On-demand speed test for a remote. Returns the mutation so the card can show
- * a per-remote running state and keep the last result; errors are toasted.
+ * Last persisted speed-test result for a remote (null if never run). Survives
+ * navigation/reload because the backend stores it. `enabled` guards against a
+ * missing id while a card mounts.
  */
-export function useSpeedTest() {
+export function useSpeedTest(id: string | null) {
+  return useQuery({
+    queryKey: qk.speedTest(id ?? ""),
+    queryFn: () => api.getSpeedTest(id as string),
+    enabled: !!id,
+  });
+}
+
+/**
+ * On-demand speed test for a remote. Returns the mutation so the card can show
+ * a per-remote running state; on success it writes the fresh result into the
+ * `qk.speedTest(id)` cache so the card reflects it immediately. Errors toasted.
+ */
+export function useRunSpeedTest() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.speedTest(id),
+    onSuccess: (res, id) => {
+      qc.setQueryData(qk.speedTest(id), res);
+    },
     onError: (e: Error) =>
       toast.error("Speed test failed", { description: e.message }),
   });

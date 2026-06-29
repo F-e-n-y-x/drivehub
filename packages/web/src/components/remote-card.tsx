@@ -11,7 +11,7 @@ import {
   Plug,
   Trash2,
 } from "lucide-react";
-import type { RemotePublic, SpeedTestResult } from "@drivehub/types";
+import type { RemotePublic } from "@drivehub/types";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +25,7 @@ import {
   useRemoteAbout,
   useRemoteMutations,
   useRenameRemote,
+  useRunSpeedTest,
   useSpeedTest,
 } from "@/hooks/queries";
 import { NamePromptDialog } from "@/components/name-prompt-dialog";
@@ -58,11 +59,12 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
   const status = remoteStatusMeta(remote.status);
   const { test, remove } = useRemoteMutations();
   const rename = useRenameRemote();
-  const speedTest = useSpeedTest();
+  const speedTest = useRunSpeedTest();
+  const lastSpeed = useSpeedTest(remote.id);
   const about = useRemoteAbout(remote.id);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
-  const [speed, setSpeed] = useState<SpeedTestResult | null>(null);
+  const speed = lastSpeed.data ?? null;
 
   const email = remote.summary.email;
   // Detail grid: Type is always shown; whitelist the rest, capped so the card
@@ -71,8 +73,7 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
     (f) => (remote.summary[f.key] ?? "").trim().length > 0,
   ).slice(0, 3);
 
-  const runSpeedTest = () =>
-    speedTest.mutate(remote.id, { onSuccess: (res) => setSpeed(res) });
+  const runSpeedTest = () => speedTest.mutate(remote.id);
 
   return (
     <Card className="flex flex-col gap-4 p-5">
@@ -127,9 +128,9 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
         error={about.isError}
       />
 
-      {/* Speed test result (persists last run) */}
+      {/* Speed test result (server-persisted; survives reload/navigation) */}
       {speed && (
-        <div className="flex items-center gap-4 rounded-lg border border-border/60 px-3 py-2 text-xs">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-border/60 px-3 py-2 text-xs">
           <span className="font-medium text-muted-foreground">Throughput</span>
           <span className="flex items-center gap-1 tabular-nums text-foreground">
             <ArrowUp className="size-3.5 text-synced" />
@@ -139,6 +140,11 @@ export function RemoteCard({ remote }: { remote: RemotePublic }) {
             <ArrowDown className="size-3.5 text-accent" />
             {formatSpeed(speed.downloadBytesPerSec)}
           </span>
+          {speed.at && (
+            <span className="ml-auto text-muted-foreground/70">
+              tested {formatRelativeTime(speed.at)}
+            </span>
+          )}
         </div>
       )}
 

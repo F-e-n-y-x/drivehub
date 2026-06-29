@@ -16,7 +16,7 @@ import { authUrl, exchangeCodeForRclone } from "../google/oauth.js";
 import { getLogLevel, setLogLevel } from "../logger.js";
 import { logStore } from "../logs/store.js";
 
-const REMOTE_TYPES = ["local", "s3", "b2", "drive", "dropbox", "onedrive", "icloud", "webdav", "smb", "sftp", "custom"] as const;
+const REMOTE_TYPES = ["local", "s3", "b2", "drive", "dropbox", "onedrive", "icloud", "webdav", "alist", "smb", "sftp", "custom"] as const;
 
 const SettingsSchema = z.object({
   concurrency: z.number().int().min(1).max(32),
@@ -205,6 +205,11 @@ export function buildServer(config: AppConfig, orch: Orchestrator, logger: Logge
     } catch (e) {
       return reply.code(400).send({ error: "about_failed", message: String((e as Error).message ?? e) });
     }
+  });
+
+  app.get("/api/remotes/:id/speedtest", async (req) => {
+    const { id } = req.params as { id: string };
+    return orch.remotes.lastSpeedTest(id);
   });
 
   app.post("/api/remotes/:id/speedtest", async (req, reply) => {

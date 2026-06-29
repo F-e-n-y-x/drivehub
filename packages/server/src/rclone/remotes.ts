@@ -64,6 +64,18 @@ export const REMOTE_CATALOG: RemoteTypeInfo[] = [
     ],
   },
   {
+    type: "alist",
+    label: "AList / OpenList",
+    oauth: false,
+    description:
+      "Connect an AList or OpenList server over WebDAV — and through it, any storage AList supports (TeraBox, Quark, Baidu, 115, and more) without managing tokens here.",
+    fields: [
+      { key: "url", label: "WebDAV URL", type: "text", required: true, placeholder: "http://host:5244/dav" },
+      { key: "user", label: "Username", type: "text", required: true },
+      { key: "pass", label: "Password", type: "password", required: true },
+    ],
+  },
+  {
     type: "smb",
     label: "SMB / CIFS (NAS, Windows share)",
     oauth: false,
@@ -134,6 +146,7 @@ export const REMOTE_CATALOG: RemoteTypeInfo[] = [
 /** Map a DriveHub remote type to the underlying rclone backend type. */
 const RCLONE_BACKEND: Partial<Record<RemoteType, string>> = {
   icloud: "iclouddrive",
+  alist: "webdav", // AList/OpenList is reached via its WebDAV endpoint
 };
 function rcloneBackend(type: RemoteType): string {
   return RCLONE_BACKEND[type] ?? type;
@@ -223,6 +236,9 @@ export class RemoteService {
     const existing = new Set(this.repo.listRemotes().map((r) => r.name));
     const name = sanitizeName(input.label, existing);
     const params = pruneEmpty(input.params);
+
+    // AList speaks generic WebDAV; rclone needs the vendor hint.
+    if (input.type === "alist" && !params.vendor) params.vendor = "other";
 
     let summary: Record<string, string>;
     if (input.type === "custom") {
@@ -411,11 +427,31 @@ export class RemoteService {
     return { total: a.total, used: a.used, free: a.free };
   }
 
-  /** On-demand round-trip speed test: upload then download a temp blob. */
+  /** Last saved speed-test result for a remote, or null. */
+  lastSpeedTest(remoteId: string): {
+    sizeBytes: number;
+    uploadBytesPerSec: number | null;
+    downloadBytesPerSec: number | null;
+    at: number | null;
+  } | null {
+    const raw = this.repo.kvGet(`speedtest:${remoteId}`);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * On-demand round-trip speed test: upload then download a temp blob. Uses the
+   * same throughput flags as real jobs (bigger chunks + multi-thread download)
+   * so the number reflects tuned performance, not a throttled single stream.
+   */
   async speedTest(
     remoteId: string,
-    sizeBytes = 16 * 1024 * 1024,
-  ): Promise<{ sizeBytes: number; uploadBytesPerSec: number | null; downloadBytesPerSec: number | null }> {
+    sizeBytes = 32 * 1024 * 1024,
+  ): Promise<{ sizeBytes: number; uploadBytesPerSec: number | null; downloadBytesPerSec: number | null; at: number }> {
     const row = this.repo.getRemote(remoteId);
     if (!row) throw new Error("Unknown remote");
     const tmpDir = path.join(this.config.DATA_DIR, "tmp");
@@ -424,18 +460,24 @@ export class RemoteService {
     const downPath = path.join(tmpDir, `speedtest-down-${nanoid(6)}.bin`);
     const remoteTarget = this.target(remoteId, `.drivehub-speedtest-${nanoid(6)}.bin`);
 
+    const perfArgs = [
+      "--drive-chunk-size", "64M",
+      "--drive-pacer-min-sleep", "10ms",
+      "--multi-thread-streams", "8",
+      "--multi-thread-cutoff", "16M",
+    ];
     let uploadBytesPerSec: number | null = null;
     let downloadBytesPerSec: number | null = null;
     try {
       await writeFile(upPath, randomBytes(sizeBytes));
       const t1 = Date.now();
-      const up = await this.rclone.copyto(upPath, remoteTarget);
+      const up = await this.rclone.copyto(upPath, remoteTarget, perfArgs);
       const upMs = Date.now() - t1;
       if (up.code !== 0) throw new Error(up.stderr.split("\n").filter(Boolean).pop() ?? "upload failed");
       uploadBytesPerSec = upMs > 0 ? Math.round(sizeBytes / (upMs / 1000)) : null;
 
       const t2 = Date.now();
-      const down = await this.rclone.copyto(remoteTarget, downPath);
+      const down = await this.rclone.copyto(remoteTarget, downPath, perfArgs);
       const downMs = Date.now() - t2;
       if (down.code === 0) {
         downloadBytesPerSec = downMs > 0 ? Math.round(sizeBytes / (downMs / 1000)) : null;
@@ -445,7 +487,10 @@ export class RemoteService {
       await rm(upPath, { force: true }).catch(() => {});
       await rm(downPath, { force: true }).catch(() => {});
     }
-    return { sizeBytes, uploadBytesPerSec, downloadBytesPerSec };
+    const result = { sizeBytes, uploadBytesPerSec, downloadBytesPerSec, at: Date.now() };
+    // Persist so the last result survives navigation/restart.
+    this.repo.kvSet(`speedtest:${remoteId}`, JSON.stringify(result));
+    return result;
   }
 
   async browse(remoteId: string, subPath: string): Promise<RemoteListing> {

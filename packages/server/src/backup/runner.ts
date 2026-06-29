@@ -133,6 +133,16 @@ export class JobRunner {
       "--checkers",
       String(settings.concurrency * 2),
       "--fast-list",
+      // Throughput tuning. Real speed comes from parallelism + bigger chunks,
+      // not a single stream (which Google Drive throttles hard).
+      "--drive-chunk-size",
+      "64M", // larger upload chunks -> much faster Drive uploads
+      "--drive-pacer-min-sleep",
+      "10ms", // less API back-off between Drive calls (default 100ms)
+      "--multi-thread-streams",
+      "8", // split large single-file downloads across streams
+      "--multi-thread-cutoff",
+      "50M",
     ];
     if (settings.bandwidthLimit) args.push("--bwlimit", settings.bandwidthLimit);
     for (const pat of settings.excludePatterns) args.push("--exclude", pat);

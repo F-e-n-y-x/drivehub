@@ -163,6 +163,11 @@ export const api = {
   // backend can't report it for that provider).
   getRemoteAbout: (id: string) =>
     request<RemoteAbout>(`/api/remotes/${encodeURIComponent(id)}/about`),
+  // Last persisted throughput test for a remote (null if never run).
+  getSpeedTest: (id: string) =>
+    request<SpeedTestResult | null>(
+      `/api/remotes/${encodeURIComponent(id)}/speedtest`,
+    ),
   // On-demand throughput test (uploads + downloads a ~16MB temp blob).
   speedTest: (id: string) =>
     request<SpeedTestResult>(
@@ -272,6 +277,7 @@ export const qk = {
   browse: (remoteId: string, path: string) =>
     ["browse", remoteId, path] as const,
   remoteAbout: (remoteId: string) => ["remote-about", remoteId] as const,
+  speedTest: (remoteId: string) => ["speed-test", remoteId] as const,
   fs: (path: string) => ["fs", path] as const,
   activity: (search: string) => ["activity", search] as const,
   updates: ["updates"] as const,

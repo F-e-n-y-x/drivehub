@@ -39,6 +39,19 @@ export function formatDuration(
   return `${h}h ${m % 60}m`;
 }
 
+/** Compact duration from a number of seconds, e.g. 80 -> "1m 20s", 5 -> "5s". */
+export function formatSeconds(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined || seconds < 0) return "—";
+  const s = Math.round(seconds);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  if (m < 60) return rem ? `${m}m ${rem}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  const remM = m % 60;
+  return remM ? `${h}h ${remM}m` : `${h}h`;
+}
+
 /** Transfer rate, e.g. 1048576 -> "1.0 MB/s". */
 export function formatSpeed(bytesPerSec: number | null | undefined): string {
   if (!bytesPerSec) return "0 B/s";

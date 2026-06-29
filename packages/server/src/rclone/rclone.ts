@@ -263,8 +263,8 @@ export class RcloneService {
   async moveto(src: string, dst: string): Promise<RcloneResult> {
     return this.run(["moveto", src, dst]);
   }
-  async copyto(src: string, dst: string): Promise<RcloneResult> {
-    return this.run(["copyto", src, dst]);
+  async copyto(src: string, dst: string, extraArgs: string[] = []): Promise<RcloneResult> {
+    return this.run(["copyto", src, dst, ...extraArgs]);
   }
   /** Create an empty file (or update its mod time). */
   async touch(target: string): Promise<RcloneResult> {

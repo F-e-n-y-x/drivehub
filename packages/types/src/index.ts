@@ -20,6 +20,7 @@ export type RemoteType =
   | "onedrive"
   | "icloud"
   | "webdav"
+  | "alist"
   | "smb"
   | "sftp"
   | "custom";
@@ -62,6 +63,8 @@ export interface SpeedTestResult {
   sizeBytes: number;
   uploadBytesPerSec: number | null;
   downloadBytesPerSec: number | null;
+  /** When the test was run (epoch ms); null if never run. */
+  at: number | null;
 }
 
 export interface RemoteTypeInfo {

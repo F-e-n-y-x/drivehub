@@ -13,6 +13,7 @@ import {
   HardDriveDownload,
   Cloud,
   SlidersHorizontal,
+  Layers,
   type LucideIcon,
 } from "lucide-react";
 import type { RemoteType } from "@drivehub/types";
@@ -51,6 +52,7 @@ const SPEC: Record<RemoteType, BrandSpec> = {
   local: { Icon: HardDrive, brand: false },
   smb: { Icon: HardDriveDownload, brand: false },
   webdav: { Icon: Server, brand: false },
+  alist: { Icon: Layers, brand: false },
   sftp: { Icon: Server, brand: false },
   custom: { Icon: SlidersHorizontal, brand: false },
 };
