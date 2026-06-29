@@ -22,7 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Field } from "@/components/field";
 import { RemoteTypeFields } from "@/components/remote-type-fields";
 import { FolderPicker } from "@/components/folder-picker";
-import { remoteIcon } from "@/lib/remotes";
+import { RemoteIcon } from "@/components/brand-icon";
 import { useRemoteCatalog, useRemoteMutations, useRemotes } from "@/hooks/queries";
 import { toast } from "@/components/ui/toast";
 
@@ -241,15 +241,14 @@ export function AddRemoteDialog({
                     <Skeleton key={i} className="h-16 w-full rounded-lg" />
                   ))
                 : catalog.map((info) => {
-                    const Icon = remoteIcon(info.type);
                     return (
                       <button
                         key={info.type}
                         onClick={() => pick(info)}
                         className="flex items-start gap-3 rounded-lg border border-border bg-card p-3 text-left transition-colors hover:border-accent/50 hover:bg-muted/50"
                       >
-                        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent-muted text-accent">
-                          <Icon className="size-4" />
+                        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/40">
+                          <RemoteIcon type={info.type} className="size-4" />
                         </div>
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-foreground">

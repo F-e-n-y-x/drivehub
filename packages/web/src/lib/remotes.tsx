@@ -1,30 +1,7 @@
-import {
-  Cloud,
-  HardDrive,
-  HardDriveDownload,
-  Box,
-  Server,
-  FolderSync,
-  type LucideIcon,
-} from "lucide-react";
 import type { RemoteType, JobMode, Schedule } from "@drivehub/types";
 
-const ICONS: Record<RemoteType, LucideIcon> = {
-  local: HardDrive,
-  s3: Cloud,
-  b2: Box,
-  drive: FolderSync,
-  dropbox: Box,
-  onedrive: Cloud,
-  icloud: Cloud,
-  webdav: Server,
-  smb: HardDriveDownload,
-  sftp: Server,
-};
-
-export function remoteIcon(type: RemoteType): LucideIcon {
-  return ICONS[type] ?? Cloud;
-}
+// Storage-provider icons live in `@/components/brand-icon` (RemoteIcon) so the
+// brand marks stay in one place. This module owns the text/labels only.
 
 const TYPE_LABELS: Record<RemoteType, string> = {
   local: "Local disk",

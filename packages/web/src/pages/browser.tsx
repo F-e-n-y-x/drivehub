@@ -16,10 +16,11 @@ import { useBrowse, useRemotes } from "@/hooks/queries";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { SimpleSelect } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { QueryError } from "@/components/query-error";
 import { EmptyState } from "@/components/empty-state";
+import { RemoteIcon } from "@/components/brand-icon";
 import { entryIcon } from "@/lib/file-icons";
 import { remoteTypeLabel } from "@/lib/remotes";
 import { cn, formatBytes, formatRelativeTime } from "@/lib/utils";
@@ -61,17 +62,23 @@ export function BrowserPage() {
           remoteId={remoteId}
           remoteSelector={
             <div className="w-full sm:w-64">
-              <Select
+              <SimpleSelect
                 value={remoteId}
-                onChange={(e) => setRemoteId(e.target.value)}
+                onValueChange={setRemoteId}
                 aria-label="Select remote"
-              >
-                {remotes.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.label} · {remoteTypeLabel(r.type)}
-                  </option>
-                ))}
-              </Select>
+                options={remotes.map((r) => ({
+                  value: r.id,
+                  label: (
+                    <span className="flex items-center gap-2">
+                      <RemoteIcon type={r.type} className="size-4" />
+                      <span className="truncate">{r.label}</span>
+                      <span className="text-muted-foreground">
+                        · {remoteTypeLabel(r.type)}
+                      </span>
+                    </span>
+                  ),
+                }))}
+              />
             </div>
           }
         />
@@ -281,16 +288,16 @@ function SortControl({
   return (
     <div className="flex items-center gap-1.5">
       <div className="w-32">
-        <Select
+        <SimpleSelect
           value={sortKey}
-          onChange={(e) => onKeyChange(e.target.value as SortKey)}
+          onValueChange={(v) => onKeyChange(v as SortKey)}
           aria-label="Sort by"
-          className="h-9"
-        >
-          <option value="name">Name</option>
-          <option value="size">Size</option>
-          <option value="modified">Modified</option>
-        </Select>
+          options={[
+            { value: "name", label: "Name" },
+            { value: "size", label: "Size" },
+            { value: "modified", label: "Modified" },
+          ]}
+        />
       </div>
       <Button
         variant="outline"

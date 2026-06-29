@@ -19,8 +19,9 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { SimpleSelect } from "@/components/ui/select";
 import { Field } from "@/components/field";
+import { RemoteIcon } from "@/components/brand-icon";
 import { PathPickerDialog } from "@/components/path-picker-dialog";
 import { modeHelp, modeLabel, WEEKDAYS } from "@/lib/remotes";
 import { useJobMutations, useRemotes } from "@/hooks/queries";
@@ -145,14 +146,15 @@ export function JobDialog({
               />
             </Field>
             <Field label="Type" htmlFor="job-type">
-              <Select
-                id="job-type"
+              <SimpleSelect
                 value={form.type}
-                onChange={(e) => set("type", e.target.value as JobType)}
-              >
-                <option value="sync">Sync</option>
-                <option value="snapshot">Snapshot (archive)</option>
-              </Select>
+                onValueChange={(v) => set("type", v as JobType)}
+                aria-label="Job type"
+                options={[
+                  { value: "sync", label: "Sync" },
+                  { value: "snapshot", label: "Snapshot (archive)" },
+                ]}
+              />
             </Field>
           </div>
 
@@ -320,17 +322,21 @@ function Endpoint({
       <p className="mb-3 text-[13px] font-semibold text-foreground">{title}</p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Remote" required>
-          <Select
+          <SimpleSelect
             value={remoteId}
-            onChange={(e) => onRemote(e.target.value)}
-          >
-            <option value="">Select a remote…</option>
-            {remotes.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.label}
-              </option>
-            ))}
-          </Select>
+            onValueChange={onRemote}
+            placeholder="Select a remote…"
+            aria-label={`${title} remote`}
+            options={remotes.map((r) => ({
+              value: r.id,
+              label: (
+                <span className="flex items-center gap-2">
+                  <RemoteIcon type={r.type} className="size-4" />
+                  {r.label}
+                </span>
+              ),
+            }))}
+          />
         </Field>
         <Field label="Path">
           <div className="flex gap-2">
@@ -366,16 +372,18 @@ function ScheduleEditor({
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <Field label="Schedule">
-        <Select
+        <SimpleSelect
           value={schedule.kind}
-          onChange={(e) => onChange({ kind: e.target.value as ScheduleKind })}
-        >
-          <option value="realtime">Real-time</option>
-          <option value="interval">Every N minutes</option>
-          <option value="daily">Daily</option>
-          <option value="weekly">Weekly</option>
-          <option value="manual">Manual only</option>
-        </Select>
+          onValueChange={(v) => onChange({ kind: v as ScheduleKind })}
+          aria-label="Schedule"
+          options={[
+            { value: "realtime", label: "Real-time" },
+            { value: "interval", label: "Every N minutes" },
+            { value: "daily", label: "Daily" },
+            { value: "weekly", label: "Weekly" },
+            { value: "manual", label: "Manual only" },
+          ]}
+        />
       </Field>
 
       {schedule.kind === "interval" && (
@@ -403,16 +411,15 @@ function ScheduleEditor({
 
       {schedule.kind === "weekly" && (
         <Field label="Weekday">
-          <Select
+          <SimpleSelect
             value={String(schedule.weekday ?? 1)}
-            onChange={(e) => onChange({ weekday: Number(e.target.value) })}
-          >
-            {WEEKDAYS.map((d, i) => (
-              <option key={d} value={i}>
-                {d}
-              </option>
-            ))}
-          </Select>
+            onValueChange={(v) => onChange({ weekday: Number(v) })}
+            aria-label="Weekday"
+            options={WEEKDAYS.map((d, i) => ({
+              value: String(i),
+              label: d,
+            }))}
+          />
         </Field>
       )}
     </div>

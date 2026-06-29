@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { StatusDot } from "@/components/status-dot";
+import { RemoteIcon } from "@/components/brand-icon";
 import { SimpleTooltip } from "@/components/ui/tooltip";
 import { JobProgress } from "@/components/job-progress";
 import { JobDialog } from "@/components/job-dialog";
@@ -34,9 +35,25 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 
-function endpoint(remotes: RemotePublic[], id: string, path: string): string {
-  const label = remotes.find((r) => r.id === id)?.label ?? "?";
-  return path ? `${label}:${path}` : label;
+function Endpoint({
+  remotes,
+  id,
+  path,
+}: {
+  remotes: RemotePublic[];
+  id: string;
+  path: string;
+}) {
+  const remote = remotes.find((r) => r.id === id);
+  const label = remote?.label ?? "?";
+  return (
+    <span className="flex min-w-0 items-center gap-1">
+      {remote && <RemoteIcon type={remote.type} className="size-3.5" />}
+      <span className="truncate font-mono">
+        {path ? `${label}:${path}` : label}
+      </span>
+    </span>
+  );
 }
 
 export function JobCard({
@@ -70,13 +87,17 @@ export function JobCard({
             </h3>
           </div>
           <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="truncate font-mono">
-              {endpoint(remotes, job.sourceRemoteId, job.sourcePath)}
-            </span>
+            <Endpoint
+              remotes={remotes}
+              id={job.sourceRemoteId}
+              path={job.sourcePath}
+            />
             <ArrowRight className="size-3 shrink-0" />
-            <span className="truncate font-mono">
-              {endpoint(remotes, job.destRemoteId, job.destPath)}
-            </span>
+            <Endpoint
+              remotes={remotes}
+              id={job.destRemoteId}
+              path={job.destPath}
+            />
           </div>
         </div>
         <Badge variant={status.badgeVariant}>
