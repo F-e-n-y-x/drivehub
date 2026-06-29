@@ -127,8 +127,56 @@ and **primary** password (not an app-specific password), then enter the 6-digit
 may need a periodic reconnect; accounts with Advanced Data Protection aren't
 supported.
 
-**Anything else (pCloud, Mega, Koofr, Storj, Box, Yandex… or TeraBox)** — use
+**Anything else (pCloud, Mega, Koofr, Storj, Box, Yandex…)** — use
 **Add remote → Custom / other (advanced)**: enter the rclone backend name plus
-its config keys. Backends rclone doesn't ship (e.g. **TeraBox**) require a
-TeraBox-capable rclone build mounted into the container and selected via
-`RCLONE_BIN`; DriveHub ships official rclone and doesn't bundle forks.
+its config keys.
+
+## TeraBox
+
+TeraBox has **no official API and no native rclone backend**, so DriveHub can't
+connect it directly. Two working options:
+
+**Option A — AList as a WebDAV bridge (recommended; no rclone fork).**
+[AList](https://alist.nn.ci) is a small self-hosted gateway that *can* speak
+TeraBox and re-expose it over standard WebDAV — which official rclone (and
+therefore DriveHub) understands.
+1. Run AList (e.g. alongside DriveHub):
+   ```yaml
+   services:
+     alist:
+       image: xhofe/alist:latest
+       container_name: alist
+       restart: unless-stopped
+       ports: ["5244:5244"]
+       volumes: ["./alist:/opt/alist/data"]
+   ```
+   Get the admin password with `docker exec -it alist ./alist admin`.
+2. In AList (`http://<host>:5244`): **Manage → Storage → Add → Terabox**, sign in.
+3. AList serves WebDAV at `http://<host>:5244/dav` (your AList username/password).
+4. In DriveHub: **Add remote → WebDAV / Nextcloud** → URL `http://<host>:5244/dav`,
+   your AList user + pass. Browse/sync TeraBox like any other remote.
+
+**Option B — a TeraBox-capable rclone fork (`rclone-extra`).**
+[rclone-extra](https://github.com/gulp79/rclone-extra) is a fork that ships
+prebuilt binaries and adds a native `terabox` backend (cookie-based).
+
+1. Download the binary for your container's architecture from the
+   [releases](https://github.com/gulp79/rclone-extra/releases) (e.g.
+   `linux-amd64` or `linux-arm64`), name it `rclone-extra`, and put it on the
+   host, e.g. `./bin/rclone-extra` (make it executable: `chmod +x`).
+2. Mount it into the container and select it. In your compose/stack add:
+   ```yaml
+       volumes:
+         - ./bin/rclone-extra:/usr/local/bin/rclone-extra:ro
+       environment:
+         RCLONE_BIN: /usr/local/bin/rclone-extra
+   ```
+3. Get your TeraBox **cookie**: sign in at terabox.com, open DevTools (F12) →
+   Network → any request → copy the full `Cookie` request header.
+4. In DriveHub: **Add remote → Custom / other (advanced)**, backend `terabox`,
+   add a config key `cookie` = the full cookie string.
+
+Caveats: this is unofficial; the cookie expires periodically (re-paste when it
+does), and it can break when TeraBox changes. DriveHub ships official rclone and
+does not
+bundle forks.
