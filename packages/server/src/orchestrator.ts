@@ -14,6 +14,7 @@ import { Scheduler } from "./backup/scheduler.js";
 import { UpdateService } from "./updates/service.js";
 
 const APP_VERSION = process.env.APP_VERSION ?? "0.1.0";
+const GIT_SHA = process.env.GIT_SHA ?? null;
 
 /**
  * Top-level wiring. Owns the rclone service, the remote/job services, the
@@ -54,6 +55,7 @@ export class Orchestrator {
     this.updates = new UpdateService(
       this.rclone,
       APP_VERSION,
+      GIT_SHA,
       () => this.quiescer.available(),
       logger,
     );

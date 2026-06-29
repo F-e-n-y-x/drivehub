@@ -48,6 +48,10 @@ ENV PGID=10001
 # Stamped at build time so the app can report its version / check for updates.
 ARG APP_VERSION=0.1.0
 ENV APP_VERSION=$APP_VERSION
+# Git commit the image was built from — used to detect when a rolling "main"
+# image is behind the latest commit.
+ARG GIT_SHA=""
+ENV GIT_SHA=$GIT_SHA
 WORKDIR /app
 
 # gosu drops privileges after the entrypoint fixes mount permissions.
